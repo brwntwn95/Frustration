@@ -1,0 +1,12 @@
+{
+  "name": "frustration-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A small web multiplayer version of Frustration Rummy for family games.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
