@@ -140,6 +140,40 @@ select {
   font-weight: 700;
 }
 
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 28px;
+  margin: -2px 0 12px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.05);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.connection-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(212, 90, 80, 0.14);
+}
+
+.connection-status.online {
+  color: #91e5be;
+}
+
+.connection-status.online::before {
+  background: #2aa876;
+  box-shadow: 0 0 0 3px rgba(42, 168, 118, 0.16);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

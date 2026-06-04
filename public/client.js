@@ -8,12 +8,23 @@ let sortMode = localStorage.getItem("frustration-sort") || "suit";
 let lastDrawPile = null;
 let intentTimer = null;
 let targetMeldId = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+let connectionMessage = "Connecting...";
 
 connect();
 renderWelcome();
 
 function connect() {
+  window.clearTimeout(reconnectTimer);
+  connectionMessage = reconnectAttempts ? "Reconnecting..." : "Connecting...";
+  renderConnectionStatus();
   socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
+  socket.addEventListener("open", () => {
+    reconnectAttempts = 0;
+    connectionMessage = "Connected";
+    renderConnectionStatus();
+  });
   socket.addEventListener("message", (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "state") {
@@ -23,7 +34,15 @@ function connect() {
     }
     if (data.type === "error") showToast(data.message);
   });
-  socket.addEventListener("close", () => showToast("Connection lost. Refresh the page to reconnect."));
+  socket.addEventListener("error", () => {
+    connectionMessage = "Connection failed. Retrying...";
+    renderConnectionStatus();
+  });
+  socket.addEventListener("close", () => {
+    connectionMessage = "Connection lost. Retrying...";
+    renderConnectionStatus();
+    scheduleReconnect();
+  });
 }
 
 function send(payload) {
@@ -32,6 +51,23 @@ function send(payload) {
     return;
   }
   socket.send(JSON.stringify(payload));
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectAttempts += 1;
+  const delay = Math.min(1200 + reconnectAttempts * 600, 5000);
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+}
+
+function renderConnectionStatus() {
+  const status = document.querySelector("#connectionStatus");
+  if (!status) return;
+  status.textContent = connectionMessage;
+  status.className = `connection-status ${connectionMessage === "Connected" ? "online" : "offline"}`;
 }
 
 function preserveValidSelection(nextState) {
@@ -54,6 +90,7 @@ function renderWelcome() {
         </div>
         <form class="entry" id="joinForm">
           <h2>Join a table</h2>
+          <div class="connection-status offline" id="connectionStatus">${connectionMessage}</div>
           <label class="field">Your name
             <input id="name" autocomplete="name" maxlength="24" required>
           </label>

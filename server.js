@@ -480,6 +480,11 @@ function handleClose(ws) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
   const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
   const filePath = path.normalize(path.join(PUBLIC_DIR, pathname));
   if (!filePath.startsWith(PUBLIC_DIR)) {
@@ -506,11 +511,15 @@ function contentType(filePath) {
 }
 
 server.on("upgrade", (req, socket) => {
-  if (req.headers["upgrade"] !== "websocket") {
+  if (String(req.headers.upgrade || "").toLowerCase() !== "websocket") {
     socket.destroy();
     return;
   }
   const key = req.headers["sec-websocket-key"];
+  if (!key) {
+    socket.destroy();
+    return;
+  }
   const accept = crypto.createHash("sha1").update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
   socket.write([
     "HTTP/1.1 101 Switching Protocols",
