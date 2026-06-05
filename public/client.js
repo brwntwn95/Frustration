@@ -11,6 +11,7 @@ let targetMeldId = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let connectionMessage = "Connecting...";
+let lastTurnNoticeKey = null;
 
 connect();
 renderWelcome();
@@ -28,9 +29,12 @@ function connect() {
   socket.addEventListener("message", (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "state") {
+      const shouldNotifyTurn = isNewTurnForMe(data.state);
+      preserveValidGroups(data.state);
       preserveValidSelection(data.state);
       state = data.state;
       renderTable();
+      if (shouldNotifyTurn) notifyMyTurn();
     }
     if (data.type === "error") showToast(data.message);
   });
@@ -70,6 +74,24 @@ function renderConnectionStatus() {
   status.className = `connection-status ${connectionMessage === "Connected" ? "online" : "offline"}`;
 }
 
+function isNewTurnForMe(nextState) {
+  if (nextState.status !== "playing" || nextState.currentPlayerId !== nextState.you) return false;
+  const turnKey = `${nextState.round}:${nextState.currentPlayerId}:${nextState.mustDraw ? "draw" : "play"}`;
+  const wasMyTurn = state?.status === "playing" && state.currentPlayerId === nextState.you;
+  const isNew = !wasMyTurn && lastTurnNoticeKey !== turnKey;
+  if (isNew) lastTurnNoticeKey = turnKey;
+  return isNew;
+}
+
+function notifyMyTurn() {
+  showToast(state.mustDraw ? "Your turn. Pick up a card." : "Your turn.");
+  document.title = "Your turn - Frustration Rummy";
+  window.setTimeout(() => {
+    if (state?.status === "playing" && state.currentPlayerId === state.you) return;
+    document.title = "Frustration Rummy";
+  }, 2400);
+}
+
 function preserveValidSelection(nextState) {
   const me = nextState.players.find((player) => player.id === nextState.you);
   if (!me?.hand) {
@@ -78,6 +100,21 @@ function preserveValidSelection(nextState) {
   }
   const valid = new Set(me.hand.map((card) => card.id));
   selected = new Set([...selected].filter((id) => valid.has(id)));
+}
+
+function preserveValidGroups(nextState) {
+  const me = nextState.players.find((player) => player.id === nextState.you);
+  if (!me?.hand) {
+    groups = [];
+    return;
+  }
+  const valid = new Set(me.hand.map((card) => card.id));
+  groups = groups
+    .map((group) => ({
+      ...group,
+      cards: group.cards.filter((id) => valid.has(id))
+    }))
+    .filter((group) => group.cards.length);
 }
 
 function renderWelcome() {
@@ -137,15 +174,17 @@ function renderTable() {
   const myMelds = state.melds.filter((meld) => meld.ownerId === state.you);
   const addableCards = cardsAddableToTarget(availableHand);
   const passiveAddableCards = me.laidDown && !targetMeldId ? cardsAddableToAnyMeld(availableHand) : new Set();
+  document.title = isMyTurn ? "Your turn - Frustration Rummy" : "Frustration Rummy";
   app.innerHTML = `
-    <section class="screen table">
-      <header class="topbar">
+    <section class="screen table ${isMyTurn ? "my-turn" : ""}">
+      <header class="topbar ${isMyTurn ? "my-turn" : ""}">
         <div>
           <div class="small">Text this code to friends</div>
           <div class="code">${state.code}</div>
         </div>
         <div>
           <strong>${statusText(current)}</strong>
+          ${isMyTurn ? `<span class="turn-pill">${state.mustDraw ? "Pick up" : "Play"}</span>` : ""}
           <div class="small">Your contract: ${state.contracts[me.contractIndex]?.label || "Complete"}</div>
         </div>
         <div class="actions">
@@ -161,7 +200,7 @@ function renderTable() {
         </aside>
 
         <section>
-          <div class="felt">
+          <div class="felt ${isMyTurn ? "my-turn" : ""}">
             <div class="table-rail">
               ${opponents.map((player, index) => renderOpponentSeat(player, index, opponents.length)).join("")}
             </div>
@@ -184,7 +223,7 @@ function renderTable() {
           </div>
 
           <div class="hand-area">
-            <div class="hand-controls">
+            <div class="hand-controls ${isMyTurn ? "my-turn" : ""}">
               <div class="hand-head">
                 <strong>Your hand (${availableHand.length}${staged.size ? ` free, ${staged.size} grouped` : ""})</strong>
                 <div class="hand-tools">
@@ -235,7 +274,6 @@ function renderTable() {
   });
   byId("layDownBtn")?.addEventListener("click", () => {
     send({ type: "layDown", groups });
-    groups = [];
     sendIntent();
   });
   byId("discardBtn")?.addEventListener("click", () => {
