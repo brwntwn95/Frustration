@@ -1,7 +1,7 @@
 ﻿const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
-const BUILD_STAMP = "Build 20260605-2249";
-const BUILD_DATE = "05/06/2026 - 10:49PM";
+const BUILD_STAMP = "Build EA-31";
+const BUILD_DATE = "05/06/2026 - 11:10PM";
 let socket;
 let state;
 let selected = new Set();
