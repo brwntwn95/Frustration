@@ -358,8 +358,9 @@ function renderTable() {
       const cardId = event.dataTransfer.getData("text/plain");
       const meld = state.melds.find((item) => item.id === target.dataset.meldDrop);
       const cardIds = selected.has(cardId) ? [...selected] : [cardId];
-      if (!meld || !canAddCardsToMeld(cardIds, meld)) {
-        showToast(cardIds.length > 1 ? "Those cards do not fit this meld together." : "That card does not fit this meld.");
+      const error = getMeldAddError(cardIds, meld);
+      if (error) {
+        showToast(error);
         return;
       }
       sendAddCardsToMeld(cardIds, meld.id);
@@ -537,24 +538,92 @@ function looksLikeColorRun(cards) {
 }
 
 function validRun(cards, mode) {
-  if (!hasEnoughNaturals(cards)) return false;
+  return validateRun(cards, mode).ok;
+}
+
+function validateRun(cards, mode = "any") {
+  if (!hasEnoughNaturals(cards)) return { ok: false, reason: "A meld needs more natural cards than wild cards." };
   const natural = cards.filter((card) => !card.wild);
-  if (!natural.length) return false;
+  if (!natural.length) return { ok: false, reason: "A run needs at least one natural card." };
   if (mode === "color") {
     const colors = new Set(natural.map(cardColor));
-    if (colors.size > 1) return false;
+    if (colors.size > 1) return { ok: false, reason: "Hand 13 runs must be all black or all red." };
   }
   const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
-  if (values.length !== natural.length) return false;
+  if (values.length !== natural.length) return { ok: false, reason: "A run cannot use two natural cards with the same number." };
   const wildCount = cards.length - natural.length;
-  for (let start = 1; start <= 14 - cards.length; start += 1) {
+  let best = null;
+  for (const start of orderedRunStarts(cards.length, values)) {
     let missing = 0;
+    const missingValues = [];
+    const end = start + cards.length - 1;
+    const outside = values.filter((value) => value < start || value > end);
     for (let value = start; value < start + cards.length; value += 1) {
+      if (!values.includes(value)) {
+        missing += 1;
+        missingValues.push(value);
+      }
+    }
+    if (!outside.length && missing <= wildCount) return { ok: true };
+    best = bestRunCandidate(best, { missing, missingValues, outside, start });
+  }
+  return { ok: false, reason: runFailureReason(best, wildCount) };
+}
+
+function findRunLayout(cards, mode = "any") {
+  const validation = validateRun(cards, mode);
+  if (!validation.ok) return null;
+  const natural = cards.filter((card) => !card.wild);
+  const wilds = cards.filter((card) => card.wild).sort((a, b) => a.id.localeCompare(b.id));
+  const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
+  const starts = orderedRunStarts(cards.length, values);
+  const start = starts.find((candidate) => {
+    const end = candidate + cards.length - 1;
+    const outside = values.some((value) => value < candidate || value > end);
+    if (outside) return false;
+    let missing = 0;
+    for (let value = candidate; value <= end; value += 1) {
       if (!values.includes(value)) missing += 1;
     }
-    if (missing <= wildCount) return true;
+    return missing <= wilds.length;
+  });
+  if (!start) return null;
+  const naturalByValue = new Map(natural.map((card) => [card.value, card]));
+  let wildIndex = 0;
+  return Array.from({ length: cards.length }, (_, index) => {
+    const value = start + index;
+    return naturalByValue.get(value) || wilds[wildIndex++];
+  });
+}
+
+function bestRunCandidate(current, candidate) {
+  if (!current) return candidate;
+  const currentScore = current.outside.length * 4 + current.missing;
+  const candidateScore = candidate.outside.length * 4 + candidate.missing;
+  return candidateScore < currentScore ? candidate : current;
+}
+
+function orderedRunStarts(length, values) {
+  const starts = Array.from({ length: 14 - length }, (_, index) => index + 1);
+  if (!values.length) return starts;
+  const lowest = values[0];
+  return starts.sort((a, b) => Math.abs(a - lowest) - Math.abs(b - lowest) || a - b);
+}
+
+function runFailureReason(best, wildCount) {
+  if (!best) return "Those cards do not make a run.";
+  if (best.outside.length) {
+    return `A run must use every card in order. ${rankList(best.outside)} would sit outside the best run.`;
   }
-  return false;
+  return `That run needs ${rankList(best.missingValues)} as wild card${best.missingValues.length === 1 ? "" : "s"}, but only has ${wildCount}.`;
+}
+
+function rankList(values) {
+  return values.map(valueRank).join(values.length > 1 ? ", " : "");
+}
+
+function valueRank(value) {
+  return { 1: "A", 11: "J", 12: "Q", 13: "K" }[value] || String(value);
 }
 
 function hasEnoughNaturals(cards) {
@@ -610,8 +679,9 @@ function cardsAddableToAnyMeld(hand) {
 
 function addSelectedCardsToMeld(meld) {
   const cardIds = [...selected];
-  if (!canAddCardsToMeld(cardIds, meld)) {
-    showToast(cardIds.length > 1 ? "Those cards do not fit this meld together." : "That card does not fit this meld.");
+  const error = getMeldAddError(cardIds, meld);
+  if (error) {
+    showToast(error);
     return;
   }
   sendAddCardsToMeld(cardIds, meld.id);
@@ -629,10 +699,16 @@ function canAddCardToMeld(card, meld) {
 }
 
 function canAddCardsToMeld(cardIds, meld) {
+  return !getMeldAddError(cardIds, meld);
+}
+
+function getMeldAddError(cardIds, meld) {
   const uniqueIds = [...new Set(cardIds)];
   const cards = uniqueIds.map(getMyCard);
-  if (!meld || !cards.length || cards.some((card) => !card)) return false;
-  return isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, ...cards] });
+  if (!meld) return "Meld not found.";
+  if (!cards.length || cards.some((card) => !card)) return "Choose cards from your hand first.";
+  const validation = validateGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, ...cards] });
+  return validation.ok ? "" : validation.reason;
 }
 
 function getMyCard(cardId) {
@@ -641,8 +717,16 @@ function getMyCard(cardId) {
 }
 
 function isValidGroup(group) {
-  if (group.type === "set") return looksLikeSet(group.cards);
-  return group.mode === "color" ? looksLikeColorRun(group.cards) : looksLikeRun(group.cards);
+  return validateGroup(group).ok;
+}
+
+function validateGroup(group) {
+  if (group.type === "set") {
+    return looksLikeSet(group.cards)
+      ? { ok: true }
+      : { ok: false, reason: "Those cards do not fit this set." };
+  }
+  return validateRun(group.cards, group.mode === "color" ? "color" : "any");
 }
 
 function renderContract(contract, index, active) {
@@ -700,12 +784,12 @@ function sortGroupCards(cards) {
   const suitOrder = { hearts: 0, diamonds: 1, clubs: 2, spades: 3, joker: 4 };
   const sorted = cards.slice();
   if (type === "run") {
-    return sorted.sort((a, b) => {
-      if (a.wild && b.wild) return a.id.localeCompare(b.id);
-      if (a.wild) return 1;
-      if (b.wild) return -1;
-      return a.value - b.value || suitOrder[a.suit] - suitOrder[b.suit];
-    });
+    return findRunLayout(sorted, currentContractNeedsColorRun() ? "color" : "any") || sorted.sort((a, b) => {
+        if (a.wild && b.wild) return a.id.localeCompare(b.id);
+        if (a.wild) return 1;
+        if (b.wild) return -1;
+        return a.value - b.value || suitOrder[a.suit] - suitOrder[b.suit];
+      });
   }
   return sorted.sort((a, b) => {
     if (a.wild && b.wild) return a.id.localeCompare(b.id);
@@ -727,16 +811,15 @@ function inferGroupType(cards) {
 
 function toggleCard(id) {
   if (targetMeldId) {
-    const me = state.players.find((player) => player.id === state.you);
-    const card = me?.hand?.find((item) => item.id === id);
     const meld = state.melds.find((item) => item.id === targetMeldId);
-    if (card && meld && canAddCardToMeld(card, meld)) {
-      send({ type: "addToMeld", cardId: id, meldId: targetMeldId });
+    const error = getMeldAddError([id], meld);
+    if (!error) {
+      sendAddCardsToMeld([id], targetMeldId);
       targetMeldId = null;
       selected.clear();
       return;
     }
-    showToast("That card does not fit the selected meld.");
+    showToast(error);
     return;
   }
   if (selected.has(id)) selected.delete(id);

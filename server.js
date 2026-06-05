@@ -290,25 +290,94 @@ function isValidSet(cards, rank = null) {
 }
 
 function isValidRun(cards, need = {}) {
-  if (!hasEnoughNaturals(cards)) return false;
-  const mode = need.mode || "suit";
+  return validateRun(cards, need).ok;
+}
+
+function validateRun(cards, need = {}) {
+  if (!hasEnoughNaturals(cards)) return { ok: false, reason: "A meld needs more natural cards than wild cards." };
+  const mode = need.mode || "any";
   const natural = cards.filter((card) => !card.wild);
   const wildCount = cards.length - natural.length;
   if (mode === "color") {
     const colors = new Set(natural.map(cardColor));
-    if (colors.size > 1) return false;
+    if (colors.size > 1) return { ok: false, reason: "Hand 13 runs must be all black or all red." };
   }
   const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
-  if (values.length !== natural.length) return false;
-  const starts = need.start ? [need.start] : Array.from({ length: 14 - cards.length }, (_, index) => index + 1);
+  if (values.length !== natural.length) return { ok: false, reason: "A run cannot use two natural cards with the same number." };
+  const starts = orderedRunStarts(cards.length, values, need.start);
+  let best = null;
   for (const start of starts) {
     let missing = 0;
+    const missingValues = [];
+    const end = start + cards.length - 1;
+    const outside = values.filter((value) => value < start || value > end);
     for (let v = start; v < start + cards.length; v += 1) {
-      if (!values.includes(v)) missing += 1;
+      if (!values.includes(v)) {
+        missing += 1;
+        missingValues.push(v);
+      }
     }
-    if (missing <= wildCount) return true;
+    if (!outside.length && missing <= wildCount) return { ok: true };
+    best = bestRunCandidate(best, { missing, missingValues, outside, start });
   }
-  return false;
+  return { ok: false, reason: runFailureReason(best, wildCount) };
+}
+
+function findRunLayout(cards, need = {}) {
+  const validation = validateRun(cards, need);
+  if (!validation.ok) return null;
+  const natural = cards.filter((card) => !card.wild);
+  const wilds = cards.filter((card) => card.wild).sort((a, b) => a.id.localeCompare(b.id));
+  const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
+  const starts = orderedRunStarts(cards.length, values, need.start);
+  const start = starts.find((candidate) => {
+    const end = candidate + cards.length - 1;
+    const outside = values.some((value) => value < candidate || value > end);
+    if (outside) return false;
+    let missing = 0;
+    for (let value = candidate; value <= end; value += 1) {
+      if (!values.includes(value)) missing += 1;
+    }
+    return missing <= wilds.length;
+  });
+  if (!start) return null;
+  const naturalByValue = new Map(natural.map((card) => [card.value, card]));
+  let wildIndex = 0;
+  return Array.from({ length: cards.length }, (_, index) => {
+    const value = start + index;
+    return naturalByValue.get(value) || wilds[wildIndex++];
+  });
+}
+
+function bestRunCandidate(current, candidate) {
+  if (!current) return candidate;
+  const currentScore = current.outside.length * 4 + current.missing;
+  const candidateScore = candidate.outside.length * 4 + candidate.missing;
+  return candidateScore < currentScore ? candidate : current;
+}
+
+function orderedRunStarts(length, values, fixedStart = null) {
+  if (fixedStart) return [fixedStart];
+  const starts = Array.from({ length: 14 - length }, (_, index) => index + 1);
+  if (!values.length) return starts;
+  const lowest = values[0];
+  return starts.sort((a, b) => Math.abs(a - lowest) - Math.abs(b - lowest) || a - b);
+}
+
+function runFailureReason(best, wildCount) {
+  if (!best) return "Those cards do not make a run.";
+  if (best.outside.length) {
+    return `A run must use every card in order. ${rankList(best.outside)} would sit outside the best run.`;
+  }
+  return `That run needs ${rankList(best.missingValues)} as wild card${best.missingValues.length === 1 ? "" : "s"}, but only has ${wildCount}.`;
+}
+
+function rankList(values) {
+  return values.map(valueRank).join(values.length > 1 ? ", " : "");
+}
+
+function valueRank(value) {
+  return { 1: "A", 11: "J", 12: "Q", 13: "K" }[value] || String(value);
 }
 
 function hasEnoughNaturals(cards) {
@@ -326,12 +395,12 @@ function sortGroupCards(cards, type) {
   const suitOrder = { hearts: 0, diamonds: 1, clubs: 2, spades: 3, joker: 4 };
   const sorted = cards.slice();
   if (type === "run") {
-    return sorted.sort((a, b) => {
-      if (a.wild && b.wild) return a.id.localeCompare(b.id);
-      if (a.wild) return 1;
-      if (b.wild) return -1;
-      return a.value - b.value || suitOrder[a.suit] - suitOrder[b.suit];
-    });
+    return findRunLayout(sorted) || sorted.sort((a, b) => {
+        if (a.wild && b.wild) return a.id.localeCompare(b.id);
+        if (a.wild) return 1;
+        if (b.wild) return -1;
+        return a.value - b.value || suitOrder[a.suit] - suitOrder[b.suit];
+      });
   }
   return sorted.sort((a, b) => {
     if (a.wild && b.wild) return a.id.localeCompare(b.id);
@@ -356,8 +425,9 @@ function addCardsToMeld(room, player, cardIds, meldId) {
   if (cards.some((card) => !card)) throw new Error("One of those cards is not in your hand.");
   const meld = room.melds.find((item) => item.id === meldId);
   if (!meld) throw new Error("Meld not found.");
-  if (!isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, ...cards] })) {
-    throw new Error("Those cards do not fit on this meld.");
+  const validation = validateMeld({ type: meld.type, mode: meld.mode, cards: [...meld.cards, ...cards] });
+  if (!validation.ok) {
+    throw new Error(validation.reason);
   }
   const used = new Set(uniqueIds);
   player.hand = player.hand.filter((item) => !used.has(item.id));
@@ -365,6 +435,15 @@ function addCardsToMeld(room, player, cardIds, meldId) {
   meld.cards = sortGroupCards(meld.cards, meld.type);
   addLog(room, `${player.name} added ${cards.length === 1 ? "a card" : `${cards.length} cards`} to ${meld.ownerName}'s meld.`);
   if (player.hand.length === 0) finishRound(room, player);
+}
+
+function validateMeld(group) {
+  if (group.type === "set") {
+    return isValidSet(group.cards)
+      ? { ok: true }
+      : { ok: false, reason: "Those cards do not fit this set." };
+  }
+  return validateRun(group.cards, { size: group.cards.length, mode: group.mode || "any" });
 }
 
 function discard(room, player, cardId) {
