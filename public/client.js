@@ -285,8 +285,13 @@ function renderTable() {
   });
   document.querySelectorAll("[data-meld]").forEach((button) => {
     button.addEventListener("click", () => {
-      targetMeldId = button.dataset.meld;
-      selected.clear();
+      const meld = state.melds.find((item) => item.id === button.dataset.meld);
+      if (!meld) return;
+      if (selected.size) {
+        addSelectedCardsToMeld(meld);
+        return;
+      }
+      targetMeldId = meld.id;
       const me = state.players.find((player) => player.id === state.you);
       const staged = groupedCardIds();
       const availableHand = sortHand(me.hand.filter((card) => !staged.has(card.id)));
@@ -310,13 +315,13 @@ function renderTable() {
       event.preventDefault();
       target.classList.remove("drop-ready");
       const cardId = event.dataTransfer.getData("text/plain");
-      const card = getMyCard(cardId);
       const meld = state.melds.find((item) => item.id === target.dataset.meldDrop);
-      if (!card || !meld || !canAddCardToMeld(card, meld)) {
-        showToast("That card does not fit this meld.");
+      const cardIds = selected.has(cardId) ? [...selected] : [cardId];
+      if (!meld || !canAddCardsToMeld(cardIds, meld)) {
+        showToast(cardIds.length > 1 ? "Those cards do not fit this meld together." : "That card does not fit this meld.");
         return;
       }
-      send({ type: "addToMeld", cardId, meldId: meld.id });
+      sendAddCardsToMeld(cardIds, meld.id);
     });
   });
   animateMovedCards(previousCardPositions);
@@ -369,11 +374,12 @@ function renderOpponentSeat(player, index, total) {
 }
 
 function renderMeld(meld) {
+  const addLabel = selected.size ? `Add ${selected.size}` : "Add";
   return `
     <div class="meld" data-meld-drop="${meld.id}">
       <div class="meld-head">
         <span>${meld.type}</span>
-        <button class="secondary mini ${targetMeldId === meld.id ? "active-add" : ""}" data-meld="${meld.id}">Add</button>
+        <button class="secondary mini ${targetMeldId === meld.id ? "active-add" : ""}" data-meld="${meld.id}">${addLabel}</button>
       </div>
       <div class="cards stacked-cards">${meld.cards.map((card) => renderCard(card, false, false)).join("")}</div>
     </div>
@@ -561,8 +567,31 @@ function cardsAddableToAnyMeld(hand) {
   return addable;
 }
 
+function addSelectedCardsToMeld(meld) {
+  const cardIds = [...selected];
+  if (!canAddCardsToMeld(cardIds, meld)) {
+    showToast(cardIds.length > 1 ? "Those cards do not fit this meld together." : "That card does not fit this meld.");
+    return;
+  }
+  sendAddCardsToMeld(cardIds, meld.id);
+}
+
+function sendAddCardsToMeld(cardIds, meldId) {
+  send({ type: "addCardsToMeld", cardIds, meldId });
+  targetMeldId = null;
+  selected.clear();
+  sendIntent();
+}
+
 function canAddCardToMeld(card, meld) {
   return isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, card] });
+}
+
+function canAddCardsToMeld(cardIds, meld) {
+  const uniqueIds = [...new Set(cardIds)];
+  const cards = uniqueIds.map(getMyCard);
+  if (!meld || !cards.length || cards.some((card) => !card)) return false;
+  return isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, ...cards] });
 }
 
 function getMyCard(cardId) {

@@ -342,20 +342,29 @@ function sortGroupCards(cards, type) {
 }
 
 function addToMeld(room, player, cardId, meldId) {
+  addCardsToMeld(room, player, [cardId], meldId);
+}
+
+function addCardsToMeld(room, player, cardIds, meldId) {
   ensureTurn(room, player);
   if (room.mustDraw) throw new Error("Draw a card before adding to melds.");
   if (!player.laidDown) throw new Error("You must lay down before adding to other melds.");
   clearIntent(player);
-  const card = player.hand.find((item) => item.id === cardId);
+  const uniqueIds = [...new Set(Array.isArray(cardIds) ? cardIds : [])];
+  if (!uniqueIds.length) throw new Error("Choose at least one card to add.");
+  const cards = uniqueIds.map((id) => player.hand.find((item) => item.id === id));
+  if (cards.some((card) => !card)) throw new Error("One of those cards is not in your hand.");
   const meld = room.melds.find((item) => item.id === meldId);
-  if (!card || !meld) throw new Error("Card or meld not found.");
-  if (!isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, card] })) {
-    throw new Error("That card does not fit on this meld.");
+  if (!meld) throw new Error("Meld not found.");
+  if (!isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, ...cards] })) {
+    throw new Error("Those cards do not fit on this meld.");
   }
-  player.hand = player.hand.filter((item) => item.id !== cardId);
-  meld.cards.push(card);
+  const used = new Set(uniqueIds);
+  player.hand = player.hand.filter((item) => !used.has(item.id));
+  meld.cards.push(...cards);
   meld.cards = sortGroupCards(meld.cards, meld.type);
-  addLog(room, `${player.name} added a card to ${meld.ownerName}'s meld.`);
+  addLog(room, `${player.name} added ${cards.length === 1 ? "a card" : `${cards.length} cards`} to ${meld.ownerName}'s meld.`);
+  if (player.hand.length === 0) finishRound(room, player);
 }
 
 function discard(room, player, cardId) {
@@ -499,6 +508,7 @@ function handleMessage(ws, message) {
     } else if (data.type === "draw") draw(room, player, data.pile);
     else if (data.type === "layDown") layDown(room, player, data.groups);
     else if (data.type === "addToMeld") addToMeld(room, player, data.cardId, data.meldId);
+    else if (data.type === "addCardsToMeld") addCardsToMeld(room, player, data.cardIds, data.meldId);
     else if (data.type === "discard") discard(room, player, data.cardId);
     else if (data.type === "intent") {
       player.tableIntent = {
