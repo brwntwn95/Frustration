@@ -119,6 +119,26 @@ select {
   line-height: 1.5;
 }
 
+.build-stamp {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 12px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.04);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.build-stamp span {
+  font-weight: 700;
+  opacity: 0.78;
+}
+
 .entry {
   background: var(--panel);
   border: 1px solid var(--line);
