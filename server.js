@@ -8,19 +8,36 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const rooms = new Map();
 
 const CONTRACTS = [
-  { label: "Two sets of 3", sets: [3, 3], runs: [] },
-  { label: "One set of 3 + one same-suit run of 4", sets: [3], runs: [4] },
-  { label: "Two same-suit runs of 4", sets: [], runs: [4, 4] },
-  { label: "One set of 4 + one same-suit run of 4", sets: [4], runs: [4] },
-  { label: "Two sets of 4", sets: [4, 4], runs: [] },
-  { label: "One same-suit run of 7", sets: [], runs: [7] },
-  { label: "One set of 5 + one set of 3", sets: [5, 3], runs: [] },
-  { label: "One same-suit run of 8", sets: [], runs: [8] },
-  { label: "One set of 5 + one same-suit run of 4", sets: [5], runs: [4] },
-  { label: "One same-suit run of 9", sets: [], runs: [9] },
-  { label: "Two sets of 5", sets: [5, 5], runs: [] },
-  { label: "One same-suit run of 10", sets: [], runs: [10] }
+  { label: "2 x 3 of a kind", requirements: [setNeed(3), setNeed(3)] },
+  { label: "1 x 3 of a kind + 1 x run of 3", requirements: [setNeed(3), runNeed(3)] },
+  { label: "1 x run of 7 + a pair of Aces", requirements: [runNeed(7), setNeed(2, "A")] },
+  { label: "1 x 4 of a kind + 1 x run of 4", requirements: [setNeed(4), runNeed(4)] },
+  { label: "A run of 8 from Jack down", requirements: [runNeed(8, { start: 4 })] },
+  { label: "1 x pair + 1 x run of 5", requirements: [setNeed(2), runNeed(5)] },
+  { label: "1 x 3 of a kind + 1 x run of 5", requirements: [setNeed(3), runNeed(5)] },
+  { label: "A pair of Queens + 1 x run of 4", requirements: [setNeed(2, "Q"), runNeed(4)] },
+  { label: "2 x 4 of a kind", requirements: [setNeed(4), setNeed(4)] },
+  { label: "A run of 9", requirements: [runNeed(9)] },
+  { label: "1 x pair + 1 x 3 of a kind", requirements: [setNeed(2), setNeed(3)] },
+  { label: "1 x 4 of a kind + 2 pairs", requirements: [setNeed(4), setNeed(2), setNeed(2)] },
+  { label: "A run of 9, all black or all red", requirements: [runNeed(9, { mode: "color" })] },
+  { label: "3 x 3 of a kind", requirements: [setNeed(3), setNeed(3), setNeed(3)] },
+  { label: "A run of 10 (down and out)", requirements: [runNeed(10)], downAndOut: true },
+  { label: "A pair of Kings + 1 x run of 6", requirements: [setNeed(2, "K"), runNeed(6)] },
+  { label: "1 x 3 of a kind + 1 x run of 6", requirements: [setNeed(3), runNeed(6)] },
+  { label: "A pair of 9s + 2 x 3 of a kind", requirements: [setNeed(2, "9"), setNeed(3), setNeed(3)] },
+  { label: "1 x 5 of a kind + 1 x run of 5 (down and out)", requirements: [setNeed(5), runNeed(5)], downAndOut: true },
+  { label: "A run of 11 (down and out, no discard)", requirements: [runNeed(11)], noDiscardOut: true },
+  { label: "1 x 6 of a kind + 1 x run of 5 (down and out, no discard)", requirements: [setNeed(6), runNeed(5)], noDiscardOut: true }
 ];
+
+function setNeed(size, rank = null) {
+  return { type: "set", size, rank };
+}
+
+function runNeed(size, options = {}) {
+  return { type: "run", size, mode: options.mode || "any", start: options.start || null };
+}
 
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
 const RANKS = [
@@ -49,12 +66,11 @@ function makeDeck() {
           suit,
           rank: rank.rank,
           value: rank.value,
-          label: `${rank.rank}${suitSymbol(suit)}`
+          wild: rank.rank === "2",
+          label: `${rank.rank}${suit[0].toUpperCase()}`
         });
       }
     }
-    cards.push({ id: `${deck}-joker-a`, suit: "joker", rank: "Joker", value: 0, wild: true, label: "Joker" });
-    cards.push({ id: `${deck}-joker-b`, suit: "joker", rank: "Joker", value: 0, wild: true, label: "Joker" });
   }
   return shuffle(cards);
 }
@@ -96,6 +112,7 @@ function createRoom(hostName) {
     discard: [],
     melds: [],
     turnIndex: 0,
+    turnsTaken: 0,
     mustDraw: true,
     lastWinnerId: null,
     log: []
@@ -135,10 +152,11 @@ function startRound(room) {
   room.discard = [];
   room.melds = [];
   room.mustDraw = true;
+  room.turnsTaken = 0;
   room.players.forEach((player) => {
     player.hand = [];
     player.laidDown = false;
-    for (let i = 0; i < 11; i += 1) player.hand.push(room.stock.pop());
+    for (let i = 0; i < 10; i += 1) player.hand.push(room.stock.pop());
   });
   room.discard.push(room.stock.pop());
   if (room.lastWinnerId) {
@@ -188,6 +206,7 @@ function layDown(room, player, groups) {
   ensureTurn(room, player);
   if (room.mustDraw) throw new Error("Draw a card before laying down.");
   if (player.laidDown) throw new Error("You have already laid down this round.");
+  if (room.turnsTaken < room.players.length) throw new Error("You cannot lay down on the first round of turns.");
   clearIntent(player);
   const normalized = normalizeGroups(player, groups);
   const contract = CONTRACTS[player.contractIndex] || CONTRACTS[CONTRACTS.length - 1];
@@ -195,6 +214,12 @@ function layDown(room, player, groups) {
   if (!validation.ok) throw new Error(validation.reason);
 
   const used = new Set(normalized.flatMap((group) => group.cards.map((card) => card.id)));
+  if (contract.noDiscardOut && used.size !== player.hand.length) {
+    throw new Error("This hand is down and out with no discard, so every card must be laid down.");
+  }
+  if (contract.downAndOut && player.hand.length - used.size > 1) {
+    throw new Error("This hand is down and out, so you must be able to discard your last card.");
+  }
   player.hand = player.hand.filter((card) => !used.has(card.id));
   player.laidDown = true;
   normalized.forEach((group) => {
@@ -203,10 +228,12 @@ function layDown(room, player, groups) {
       ownerId: player.id,
       ownerName: player.name,
       type: group.type,
+      mode: group.mode || null,
       cards: sortGroupCards(group.cards, group.type)
     });
   });
   addLog(room, `${player.name} laid down: ${contract.label}.`);
+  if (player.hand.length === 0) finishRound(room, player);
 }
 
 function normalizeGroups(player, groups) {
@@ -226,44 +253,73 @@ function normalizeGroups(player, groups) {
 }
 
 function validateContract(groups, contract) {
-  const expected = [
-    ...contract.sets.map((size) => ({ type: "set", size })),
-    ...contract.runs.map((size) => ({ type: "run", size }))
-  ];
+  const expected = contract.requirements || [];
   if (groups.length !== expected.length) return { ok: false, reason: `This round needs ${contract.label}.` };
 
   const remaining = groups.slice();
   for (const need of expected) {
     const index = remaining.findIndex((group) => {
       if (group.type !== "auto" && group.type !== need.type) return false;
-      return group.cards.length >= need.size && isValidGroup({ type: need.type, cards: group.cards });
+      return matchesRequirement(group.cards, need);
     });
     if (index === -1) return { ok: false, reason: `Those cards do not satisfy: ${contract.label}.` };
     remaining[index].type = need.type;
+    remaining[index].mode = need.mode || null;
     remaining.splice(index, 1);
   }
   return { ok: true };
 }
 
+function matchesRequirement(cards, need) {
+  if (cards.length !== need.size) return false;
+  if (need.type === "set") return isValidSet(cards, need.rank);
+  return isValidRun(cards, need);
+}
+
 function isValidGroup(group) {
-  const natural = group.cards.filter((card) => !card.wild);
-  const wildCount = group.cards.length - natural.length;
-  if (group.type === "set") {
-    if (!natural.length) return true;
-    return natural.every((card) => card.rank === natural[0].rank) && wildCount <= group.cards.length - 2;
+  if (group.type === "set") return isValidSet(group.cards);
+  return isValidRun(group.cards, { size: group.cards.length, mode: group.mode || "any" });
+}
+
+function isValidSet(cards, rank = null) {
+  if (!hasEnoughNaturals(cards)) return false;
+  const natural = cards.filter((card) => !card.wild);
+  if (rank) return natural.every((card) => card.rank === rank);
+  if (!natural.length) return false;
+  return natural.every((card) => card.rank === natural[0].rank);
+}
+
+function isValidRun(cards, need = {}) {
+  if (!hasEnoughNaturals(cards)) return false;
+  const mode = need.mode || "suit";
+  const natural = cards.filter((card) => !card.wild);
+  const wildCount = cards.length - natural.length;
+  if (mode === "color") {
+    const colors = new Set(natural.map(cardColor));
+    if (colors.size > 1) return false;
   }
-  const suits = new Set(natural.map((card) => card.suit));
-  if (suits.size > 1) return false;
   const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
   if (values.length !== natural.length) return false;
-  for (let start = 1; start <= 14 - group.cards.length; start += 1) {
+  const starts = need.start ? [need.start] : Array.from({ length: 14 - cards.length }, (_, index) => index + 1);
+  for (const start of starts) {
     let missing = 0;
-    for (let v = start; v < start + group.cards.length; v += 1) {
+    for (let v = start; v < start + cards.length; v += 1) {
       if (!values.includes(v)) missing += 1;
     }
     if (missing <= wildCount) return true;
   }
   return false;
+}
+
+function hasEnoughNaturals(cards) {
+  const naturalCount = cards.filter((card) => !card.wild).length;
+  const wildCount = cards.length - naturalCount;
+  if (cards.length === 2) return naturalCount >= 1;
+  return naturalCount > wildCount;
+}
+
+function cardColor(card) {
+  return card.suit === "hearts" || card.suit === "diamonds" ? "red" : "black";
 }
 
 function sortGroupCards(cards, type) {
@@ -293,7 +349,7 @@ function addToMeld(room, player, cardId, meldId) {
   const card = player.hand.find((item) => item.id === cardId);
   const meld = room.melds.find((item) => item.id === meldId);
   if (!card || !meld) throw new Error("Card or meld not found.");
-  if (!isValidGroup({ type: meld.type, cards: [...meld.cards, card] })) {
+  if (!isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, card] })) {
     throw new Error("That card does not fit on this meld.");
   }
   player.hand = player.hand.filter((item) => item.id !== cardId);
@@ -311,6 +367,7 @@ function discard(room, player, cardId) {
   player.hand = player.hand.filter((item) => item.id !== cardId);
   room.discard.push(card);
   addLog(room, `${player.name} discarded ${card.label}.`);
+  room.turnsTaken += 1;
   if (player.hand.length === 0) finishRound(room, player);
   else {
     room.turnIndex = (room.turnIndex + 1) % room.players.length;
@@ -324,11 +381,12 @@ function finishRound(room, winner) {
   room.players.forEach((player) => {
     const points = player.hand.reduce((sum, card) => sum + cardPoints(card), 0);
     player.score += points;
-    if ((player.laidDown || player.id === winner.id) && player.contractIndex < CONTRACTS.length - 1) {
+    if (player.id === winner.id) player.score -= 20;
+    if ((player.laidDown || player.id === winner.id) && player.contractIndex < CONTRACTS.length) {
       player.contractIndex += 1;
     }
   });
-  if (winner.contractIndex >= CONTRACTS.length - 1) {
+  if (winner.contractIndex >= CONTRACTS.length) {
     room.status = "finished";
     addLog(room, `${winner.name} completed the final contract.`);
   } else {
@@ -338,9 +396,9 @@ function finishRound(room, winner) {
 }
 
 function cardPoints(card) {
-  if (card.wild) return 25;
+  if (card.rank === "A" || card.rank === "2") return 20;
   if (card.value >= 10) return 10;
-  return 5;
+  return card.value;
 }
 
 function ensureTurn(room, player) {

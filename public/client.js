@@ -146,7 +146,7 @@ function renderTable() {
         </div>
         <div>
           <strong>${statusText(current)}</strong>
-          <div class="small">Your contract: ${state.contracts[me.contractIndex].label}</div>
+          <div class="small">Your contract: ${state.contracts[me.contractIndex]?.label || "Complete"}</div>
         </div>
         <div class="actions">
           ${state.status === "lobby" && isHost ? `<button id="startBtn">Start Game</button>` : ""}
@@ -383,18 +383,19 @@ function renderMeld(meld) {
 function renderCard(card, isSelected = false, interactive = false, index = 0, count = 1, canAdd = false, canAddSoft = false) {
   const red = card.suit === "hearts" || card.suit === "diamonds";
   const suit = suitSymbol(card.suit);
-  const rank = card.wild ? "Joker" : card.rank;
-  const content = card.wild ? "Joker" : `${card.rank} ${card.suit}`;
+  const rank = card.rank;
+  const content = `${card.rank} ${card.suit}${card.wild ? " wild" : ""}`;
   const middle = (count - 1) / 2;
   const angle = ((index - middle) * 2.4).toFixed(2);
   const arc = (Math.abs(index - middle) * 2).toFixed(1);
   const style = `--angle:${angle}deg;--arc:${arc}px;--z:${index + 1};`;
   const addHint = canAdd ? " can be added to the selected meld" : canAddSoft ? " can be added to a meld" : "";
-  const className = `card ${red ? "red" : ""} ${card.wild ? "joker" : ""} ${isSelected ? "selected" : ""} ${canAdd ? "can-add" : ""} ${canAddSoft ? "can-add-soft" : ""}`;
+  const className = `card ${red ? "red" : ""} ${card.wild ? "wild-card" : ""} ${isSelected ? "selected" : ""} ${canAdd ? "can-add" : ""} ${canAddSoft ? "can-add-soft" : ""}`;
+  const rankMarkup = card.wild ? `<span>${rank}</span><small>Wild</small>` : `<span>${rank}</span>`;
   const face = `
-    <span class="corner top"><span>${rank}</span><span>${suit}</span></span>
-    <span class="pip">${card.wild ? "&#9733;" : suit}</span>
-    <span class="corner bottom"><span>${rank}</span><span>${suit}</span></span>
+    <span class="corner top">${rankMarkup}<span>${suit}</span></span>
+    <span class="pip">${suit}</span>
+    <span class="corner bottom">${rankMarkup}<span>${suit}</span></span>
   `;
   if (!interactive) return `<span class="${className}" aria-label="${content}${addHint}">${face}</span>`;
   return `<button class="${className}" style="${style}" data-card="${card.id}" draggable="true" aria-pressed="${isSelected}" aria-label="${isSelected ? "Selected" : "Select"} ${content}${addHint}">${face}</button>`;
@@ -449,37 +450,53 @@ function renderStagedCard(card, groupIndex) {
 function describePendingGroup(cards) {
   const possible = [];
   if (looksLikeSet(cards)) possible.push("set");
-  if (looksLikeRun(cards)) possible.push("run");
+  if (currentContractNeedsColorRun()) {
+    if (looksLikeColorRun(cards)) possible.push("black/red run");
+  } else if (looksLikeRun(cards)) {
+    possible.push("run");
+  }
   return possible.length ? possible.join(" / ") : "group";
 }
 
 function pendingGroupHint(cards) {
   if (!cards.length) return { ok: false, text: "Add cards" };
   if (looksLikeSet(cards)) return { ok: true, text: "Can count as a set" };
-  if (looksLikeRun(cards)) return { ok: true, text: "Can count as a same-suit run" };
-  const natural = cards.filter((card) => !card.wild);
-  const suits = new Set(natural.map((card) => card.suit));
-  const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
-  if (suits.size > 1 && couldBeRunByValue(cards)) {
-    return { ok: false, text: "Run needs one suit" };
+  if (currentContractNeedsColorRun()) {
+    if (looksLikeColorRun(cards)) return { ok: true, text: "Can count as a black/red run" };
+    if (looksLikeRun(cards)) return { ok: false, text: "Run needs all black or all red" };
   }
+  if (looksLikeRun(cards)) return { ok: true, text: "Can count as a run" };
+  const natural = cards.filter((card) => !card.wild);
+  const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
   if (values.length !== natural.length) {
     return { ok: false, text: "Run has duplicate numbers" };
   }
-  return { ok: false, text: "Not a set or same-suit run" };
+  return { ok: false, text: "Not a set or run" };
 }
 
 function looksLikeSet(cards) {
+  if (!hasEnoughNaturals(cards)) return false;
   const natural = cards.filter((card) => !card.wild);
-  if (!natural.length) return cards.length > 0;
+  if (!natural.length) return false;
   return natural.every((card) => card.rank === natural[0].rank);
 }
 
 function looksLikeRun(cards) {
+  return validRun(cards, "any");
+}
+
+function looksLikeColorRun(cards) {
+  return validRun(cards, "color");
+}
+
+function validRun(cards, mode) {
+  if (!hasEnoughNaturals(cards)) return false;
   const natural = cards.filter((card) => !card.wild);
-  if (!natural.length) return cards.length > 0;
-  const suits = new Set(natural.map((card) => card.suit));
-  if (suits.size > 1) return false;
+  if (!natural.length) return false;
+  if (mode === "color") {
+    const colors = new Set(natural.map(cardColor));
+    if (colors.size > 1) return false;
+  }
   const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
   if (values.length !== natural.length) return false;
   const wildCount = cards.length - natural.length;
@@ -491,6 +508,23 @@ function looksLikeRun(cards) {
     if (missing <= wildCount) return true;
   }
   return false;
+}
+
+function hasEnoughNaturals(cards) {
+  const naturalCount = cards.filter((card) => !card.wild).length;
+  const wildCount = cards.length - naturalCount;
+  if (cards.length === 2) return naturalCount >= 1;
+  return naturalCount > wildCount;
+}
+
+function cardColor(card) {
+  return card.suit === "hearts" || card.suit === "diamonds" ? "red" : "black";
+}
+
+function currentContractNeedsColorRun() {
+  const me = state?.players?.find((player) => player.id === state.you);
+  const label = state?.contracts?.[me?.contractIndex]?.label || "";
+  return label.includes("black or all red");
 }
 
 function couldBeRunByValue(cards) {
@@ -528,7 +562,7 @@ function cardsAddableToAnyMeld(hand) {
 }
 
 function canAddCardToMeld(card, meld) {
-  return isValidGroup({ type: meld.type, cards: [...meld.cards, card] });
+  return isValidGroup({ type: meld.type, mode: meld.mode, cards: [...meld.cards, card] });
 }
 
 function getMyCard(cardId) {
@@ -538,7 +572,7 @@ function getMyCard(cardId) {
 
 function isValidGroup(group) {
   if (group.type === "set") return looksLikeSet(group.cards);
-  return looksLikeRun(group.cards);
+  return group.mode === "color" ? looksLikeColorRun(group.cards) : looksLikeRun(group.cards);
 }
 
 function renderContract(contract, index, active) {
@@ -612,6 +646,7 @@ function sortGroupCards(cards) {
 }
 
 function inferGroupType(cards) {
+  if (currentContractNeedsColorRun() && looksLikeColorRun(cards) && !looksLikeSet(cards)) return "run";
   const isRun = looksLikeRun(cards);
   const isSet = looksLikeSet(cards);
   if (isRun && !isSet) return "run";
