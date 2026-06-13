@@ -1,4 +1,4 @@
-const appVersion = "v0.1.7";
+const appVersion = "v0.1.8";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -97,8 +97,10 @@ const routeTemplates = [
   { type: "fight", label: "Skirmish", title: "Crooked Path", detail: "Normal enemy team. Pays coins and a choice of three recruits.", coins: "+stage", danger: "normal", odds: "base" },
   { type: "fight", label: "Skirmish", title: "Lantern Road", detail: "Balanced battle with a clean branch onward.", coins: "+stage", danger: "normal", odds: "base" },
   { type: "fight", label: "Skirmish", title: "Moss Bridge", detail: "A direct enemy team blocks the next step.", coins: "+stage", danger: "normal", odds: "base" },
-  { type: "elite", label: "Elite", title: "Hard Zone", detail: "Stronger enemy team. Better payout and higher reward rarity odds.", coins: "+6", danger: "high", odds: "+rarity" },
-  { type: "elite", label: "Elite", title: "Iron Fork", detail: "A risky route with stronger foes and better post-battle odds.", coins: "+6", danger: "high", odds: "+rarity" },
+  { type: "veteran", label: "Veteran", title: "Amber Patrol", detail: "A tougher enemy team between skirmish and elite. Better payout with a small rarity bump.", coins: "+3", danger: "medium", odds: "+small rarity" },
+  { type: "veteran", label: "Veteran", title: "Torchline Pass", detail: "Seasoned foes guard this branch. Harder than a skirmish, less brutal than elite.", coins: "+3", danger: "medium", odds: "+small rarity" },
+  { type: "elite", label: "Elite", title: "Hard Zone", detail: "A dangerous enemy team with a heavy payout and higher reward rarity odds.", coins: "+9", danger: "very high", odds: "+rarity" },
+  { type: "elite", label: "Elite", title: "Iron Fork", detail: "A high-risk route with punishing foes and better post-battle odds.", coins: "+9", danger: "very high", odds: "+rarity" },
   { type: "shop", label: "Shop", title: "Pocket Market", detail: "Spend coins on healing, buffs, or another recruit.", coins: "spend", danger: "none", odds: "shop" },
   { type: "mystery", label: "Event", title: "Odd Door", detail: "May become coins, a recruit choice, or a dangerous ambush.", coins: "swingy", danger: "unknown", odds: "varies" }
 ];
@@ -314,23 +316,28 @@ function markEternalAcquired(hero) {
   state.acquiredEternalKeys.push(hero.eternalKey);
 }
 
-function makeEnemy(difficulty, elite = false) {
+function makeEnemy(difficulty, encounterType = "fight") {
+  const type = normalizeEncounterType(encounterType);
   const seed = Math.floor(Math.random() * 9999999);
   const rnd = mulberry32(seed);
-  const boost = elite ? Math.max(1, Math.floor(difficulty * 0.32)) : 0;
+  const boost = type === "elite"
+    ? Math.max(2, Math.floor(difficulty * 0.55))
+    : type === "veteran"
+      ? Math.max(1, Math.floor(difficulty * 0.22))
+      : 0;
   const hp = Math.round(4 + difficulty * 1.25 + boost * 1.4 + Math.floor(rnd() * (2 + difficulty * 0.65)));
   const level = Math.max(1, Math.round(difficulty));
   return {
     id: crypto.randomUUID(),
     name: pick(enemyNames, rnd),
-    rarity: elite ? "rare" : "common",
+    rarity: type === "elite" ? "mythic" : type === "veteran" ? "rare" : "common",
     role: "enemy",
-    trait: elite ? "Elite pressure." : "Stage threat.",
+    trait: type === "elite" ? "Elite pressure." : type === "veteran" ? "Veteran pressure." : "Stage threat.",
     level,
     hp,
     maxHp: hp,
     atk: 1 + Math.floor(difficulty * 0.45) + boost + Math.floor(rnd() * 2),
-    spd: 1 + Math.floor(rnd() * 3) + (elite ? 1 : 0),
+    spd: 1 + Math.floor(rnd() * 3) + (type === "elite" ? 2 : type === "veteran" ? 1 : 0),
     seed,
     type: "enemy"
   };
@@ -399,8 +406,20 @@ function mapPanForCurrent() {
 
 function rollCombatRoute(depth = state.stage) {
   if (depth <= 2) return "fight";
-  const eliteChance = Math.min(0.06 + depth * 0.016, 0.3);
-  return Math.random() < eliteChance ? "elite" : "fight";
+  const eliteChance = depth <= 4 ? 0.02 : Math.min(0.025 + depth * 0.012, 0.18);
+  const veteranChance = Math.min(0.16 + depth * 0.018, 0.42);
+  const roll = Math.random();
+  if (roll < eliteChance) return "elite";
+  if (roll < eliteChance + veteranChance) return "veteran";
+  return "fight";
+}
+
+function normalizeEncounterType(type) {
+  return ["fight", "veteran", "elite"].includes(type) ? type : "fight";
+}
+
+function encounterLabel(type) {
+  return type === "elite" ? "Elite zone" : type === "veteran" ? "Veteran patrol" : "Skirmish";
 }
 
 function rollSpecialRoute(depth = state.stage) {
@@ -512,48 +531,53 @@ function startRoute(route) {
     runMystery();
     return;
   }
-  startBattle(route.type === "elite");
+  startBattle(route.type);
 }
 
-function startBattle(elite = false) {
+function startBattle(encounterType = "fight") {
+  const type = normalizeEncounterType(encounterType);
+  const label = encounterLabel(type);
   state.phase = "battle";
   state.currentRound = 0;
   state.battleToken += 1;
   const token = state.battleToken;
-  const count = enemyCount(elite);
-  const difficulty = enemyDifficulty(elite);
-  state.enemies = Array.from({ length: count }, () => makeEnemy(difficulty, elite));
+  const count = enemyCount(type);
+  const difficulty = enemyDifficulty(type);
+  state.enemies = Array.from({ length: count }, () => makeEnemy(difficulty, type));
   state.combat = {
     activeId: null,
     targetId: null,
     damage: "",
     effects: [],
     tauntId: null,
-    banner: `${elite ? "Elite zone" : "Skirmish"} begins. Teams line up.`,
+    banner: `${label} begins. Teams line up.`,
     locked: true
   };
-  state.log = [`Stage ${state.stage}: ${elite ? "Elite zone" : "Skirmish"} begins.`];
+  state.log = [`Stage ${state.stage}: ${label} begins.`];
   render();
-  window.setTimeout(() => playBattle(elite, token), 420);
+  window.setTimeout(() => playBattle(type, token), 420);
 }
 
-function enemyDifficulty(elite = false) {
+function enemyDifficulty(encounterType = "fight") {
+  const type = normalizeEncounterType(encounterType);
   const partyBonus = Math.max(0, state.team.length - 1) * 0.35;
-  const eliteBonus = elite ? 1.25 : 0;
-  return Math.max(1, state.stage * 0.72 + partyBonus + enemyThreatBonus() + eliteBonus);
+  const encounterBonus = type === "elite" ? 2.6 : type === "veteran" ? 0.85 : 0;
+  return Math.max(1, state.stage * 0.72 + partyBonus + enemyThreatBonus() + encounterBonus);
 }
 
 function enemyThreatBonus() {
   return state.threat * 0.35;
 }
 
-function enemyCount(elite = false) {
+function enemyCount(encounterType = "fight") {
+  const type = normalizeEncounterType(encounterType);
   const base = state.stage <= 1 ? 1 : 1 + Math.floor((state.stage + 1) / 3);
   const teamMatched = Math.min(base, Math.max(1, state.team.length));
-  return Math.min(5, teamMatched + (elite ? 1 : 0));
+  return Math.min(5, teamMatched + (type === "elite" ? 2 : type === "veteran" ? 1 : 0));
 }
 
-async function playBattle(elite = false, token = state.battleToken) {
+async function playBattle(encounterType = "fight", token = state.battleToken) {
+  const type = normalizeEncounterType(encounterType);
   let round = 1;
 
   while (token === state.battleToken && living(state.team).length && living(state.enemies).length && round < 30) {
@@ -688,10 +712,11 @@ async function playBattle(elite = false, token = state.battleToken) {
   }
 
   if (token !== state.battleToken) return;
-  finishBattle(living(state.team).length > 0, elite);
+  finishBattle(living(state.team).length > 0, type);
 }
 
-function finishBattle(won, elite = false) {
+function finishBattle(won, encounterType = "fight") {
+  const type = normalizeEncounterType(encounterType);
   state.combat.activeId = null;
   state.combat.targetId = null;
   state.combat.damage = "";
@@ -701,18 +726,18 @@ function finishBattle(won, elite = false) {
   state.currentRound = 0;
   if (won) {
     const bonusCoins = state.team.filter((unit) => unitHasRole(unit, "collector")).length;
-    const coins = 5 + state.stage + (elite ? 6 : 0) + bonusCoins;
+    const coins = 5 + state.stage + (type === "elite" ? 9 : type === "veteran" ? 3 : 0) + bonusCoins;
     awardCoins(coins);
     state.levelsCleared += 1;
     updateCurrentScore();
-    state.threat += elite ? 1 : 0.5;
+    state.threat += type === "elite" ? 1.5 : type === "veteran" ? 0.8 : 0.5;
     state.team[0].level += 1;
     state.team[0].maxHp += 1;
     state.team[0].hp = state.team[0].maxHp;
     state.team[0].atk += state.stage % 2 === 0 ? 1 : 0;
     state.combat.banner = `Victory. Choose one recruit or take coins.`;
     pushLog(`Victory. The squad pockets ${coins} coins.`);
-    openRewards(elite ? 7 : 0);
+    openRewards(type === "elite" ? 10 : type === "veteran" ? 3 : 0);
   } else {
     endRun();
   }
@@ -1104,7 +1129,7 @@ function runMystery() {
     return;
   }
   state.log = ["The odd door was absolutely a trap."];
-  startBattle(true);
+  startBattle("elite");
 }
 
 function addLog(message) {
@@ -1189,8 +1214,8 @@ function renderBoard() {
 
 function previewEnemies() {
   if (state.phase !== "route") return [];
-  return Array.from({ length: enemyCount(false) }, (_, index) => ({
-    ...makeEnemy(enemyDifficulty(false), false),
+  return Array.from({ length: enemyCount("fight") }, (_, index) => ({
+    ...makeEnemy(enemyDifficulty("fight"), "fight"),
     id: `preview-${index}`
   }));
 }
@@ -1332,6 +1357,7 @@ function renderRoutes() {
 function routeIcon(type) {
   if (type === "current") return "L";
   if (type === "fight") return "S";
+  if (type === "veteran") return "V";
   if (type === "elite") return "!";
   if (type === "shop") return "$";
   if (type === "mystery") return "?";

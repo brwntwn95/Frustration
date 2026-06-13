@@ -10,6 +10,7 @@
   --green: #72d68b;
   --blue: #4aa3ff;
   --purple: #a46cff;
+  --orange: #ffad3b;
   --gold: #f1c44e;
   --teal: #b9fff4;
   --ink: #0d1016;
@@ -937,6 +938,12 @@ h1 {
   border-color: var(--blue);
 }
 
+.route-icon-node.veteran {
+  color: var(--orange);
+  border-color: var(--orange);
+  box-shadow: 0 0 18px rgba(255, 173, 59, 0.58), inset 0 0 12px rgba(255, 173, 59, 0.2);
+}
+
 .route-icon-node.elite {
   color: var(--red);
   border-color: var(--red);
@@ -1168,6 +1175,10 @@ h1 {
   background: var(--red);
 }
 
+.map-node.veteran::after {
+  background: var(--orange);
+}
+
 .map-node.shop::after {
   background: var(--gold);
 }
@@ -1224,6 +1235,10 @@ h1 {
 
 .route-card.elite .route-kind {
   background: var(--red);
+}
+
+.route-card.veteran .route-kind {
+  background: var(--orange);
 }
 
 .route-card.shop .route-kind {
