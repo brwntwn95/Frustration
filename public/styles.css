@@ -244,9 +244,37 @@ h1 {
 
 .unit-card.eternal {
   border-left-color: var(--teal);
+  border-color: rgba(185, 255, 244, 0.34);
+  overflow: visible;
 }
 
-.unit-card.eternal-jamie {
+.unit-card.eternal::before,
+.fighter-token.eternal::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: 0;
+  padding: 2px;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.16) 0 2px, transparent 2px 6px),
+    linear-gradient(120deg, rgba(185, 255, 244, 0.18), rgba(246, 242, 232, 0.94), rgba(94, 238, 221, 0.76), rgba(255, 255, 255, 0.84), rgba(185, 255, 244, 0.18));
+  background-size: 120px 120px, 260% 260%;
+  border-radius: 10px;
+  animation: eternalBorderFlow 5.4s linear infinite;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.unit-card.eternal > *,
+.fighter-token.eternal > * {
+  position: relative;
+  z-index: 1;
+}
+
+.unit-card.eternal-jamie,
+.fighter-token.eternal-jamie {
   overflow: visible;
 }
 
@@ -356,6 +384,12 @@ h1 {
   height: 15px;
 }
 
+.class-badge.eternal-modifier {
+  color: var(--teal);
+  border-style: double;
+  box-shadow: 0 0 14px rgba(185, 255, 244, 0.38), inset 0 0 9px rgba(185, 255, 244, 0.16);
+}
+
 .class-tooltip {
   position: absolute;
   left: 50%;
@@ -374,6 +408,10 @@ h1 {
   pointer-events: none;
 }
 
+.class-tooltip.eternal-tooltip {
+  border-color: var(--teal);
+}
+
 .class-tooltip strong,
 .class-tooltip small {
   display: block;
@@ -384,6 +422,10 @@ h1 {
   color: var(--role-color);
   font-size: 0.78rem;
   text-transform: uppercase;
+}
+
+.class-tooltip.eternal-tooltip strong {
+  color: var(--teal);
 }
 
 .class-tooltip small {
@@ -536,10 +578,6 @@ h1 {
   opacity: 0.45;
 }
 
-.fighter-token.eternal-jamie {
-  overflow: visible;
-}
-
 .fighter-token canvas {
   width: 62px;
   height: 62px;
@@ -558,6 +596,15 @@ h1 {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.token-badges {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
 }
 
 .hpbar {
@@ -641,6 +688,40 @@ h1 {
   color: #f6f2e8;
   background: var(--purple);
   box-shadow: 0 0 14px rgba(164, 108, 255, 0.45);
+}
+
+.speech-bubble {
+  position: absolute;
+  left: 50%;
+  top: -20px;
+  z-index: 8;
+  max-width: min(156px, 160%);
+  padding: 7px 9px;
+  color: #0d1016;
+  font-size: 0.76rem;
+  font-weight: 1000;
+  line-height: 1.12;
+  text-align: center;
+  background: linear-gradient(135deg, #f6f2e8, #b9fff4);
+  border: 2px solid rgba(185, 255, 244, 0.88);
+  border-radius: 9px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38), 0 0 16px rgba(185, 255, 244, 0.46);
+  transform: translateX(-50%);
+  animation: speechPop 880ms ease both;
+  pointer-events: none;
+}
+
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 1px);
+  width: 10px;
+  height: 10px;
+  background: #d9fff7;
+  border-right: 2px solid rgba(185, 255, 244, 0.88);
+  border-bottom: 2px solid rgba(185, 255, 244, 0.88);
+  transform: translateX(-50%) rotate(45deg);
 }
 
 .versus {
@@ -1326,6 +1407,23 @@ h1 {
   }
 }
 
+@keyframes eternalBorderFlow {
+  0% {
+    background-position: 0 0, 0% 50%;
+    filter: drop-shadow(0 0 4px rgba(185, 255, 244, 0.26));
+  }
+
+  50% {
+    background-position: 24px 16px, 100% 50%;
+    filter: drop-shadow(0 0 8px rgba(246, 242, 232, 0.34));
+  }
+
+  100% {
+    background-position: 48px 32px, 0% 50%;
+    filter: drop-shadow(0 0 4px rgba(185, 255, 244, 0.26));
+  }
+}
+
 @keyframes guardRing {
   0% {
     opacity: 0.9;
@@ -1351,6 +1449,23 @@ h1 {
   100% {
     opacity: 0;
     transform: translateY(-22px);
+  }
+}
+
+@keyframes speechPop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.88);
+  }
+
+  16% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-2px) scale(1.04);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
 

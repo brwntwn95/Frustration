@@ -1,4 +1,4 @@
-const appVersion = "v0.1.8";
+const appVersion = "v0.1.11";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -93,6 +93,25 @@ const eternalHeroes = [
   }
 ];
 
+const eternalModifiers = {
+  jamie: {
+    title: "Tall Girl Tantrum",
+    detail: "After healing, 10% chance to curse another Eternal ally for 1 damage and a very personal \"fuck you.\""
+  },
+  andrew: {
+    title: "Wifely Duties",
+    detail: "15% chance at turn start to sit out for 3 turns. Guard charge still builds and can still taunt while he is busy."
+  },
+  phillip: {
+    title: "Gummy Pause",
+    detail: "5% chance to take a gummy, become deeply confused, and skip his turn."
+  },
+  lucas: {
+    title: "Check This Out",
+    detail: "After attacking, 20% chance to damage himself for half the damage he just dealt."
+  }
+};
+
 const routeTemplates = [
   { type: "fight", label: "Skirmish", title: "Crooked Path", detail: "Normal enemy team. Pays coins and a choice of three recruits.", coins: "+stage", danger: "normal", odds: "base" },
   { type: "fight", label: "Skirmish", title: "Lantern Road", detail: "Balanced battle with a clean branch onward.", coins: "+stage", danger: "normal", odds: "base" },
@@ -138,6 +157,7 @@ const state = {
     targetId: null,
     damage: "",
     effects: [],
+    speech: null,
     tauntId: null,
     banner: "Pick a branch to begin the next fight.",
     locked: false
@@ -209,10 +229,41 @@ function pick(list, rnd = Math.random) {
 function rarityOdds(stage, bonus = 0) {
   const lift = Math.min(18, stage * 1.35 + bonus);
   const upgradeCount = state.oddsUpgrades || 0;
-  let eternal = Math.min(0.3 + lift * 0.09, 2.3) + upgradeCount * oddsUpgradeShift.eternal;
-  let mythic = Math.min(1.1 + lift * 0.26, 9) + upgradeCount * oddsUpgradeShift.mythic;
-  let legendary = Math.min(2.2 + lift * 0.38, 16) + upgradeCount * oddsUpgradeShift.legendary;
-  let rare = Math.min(14 + lift * 0.82, 38) + upgradeCount * oddsUpgradeShift.rare;
+  let eternal = Math.min(0.3 + lift * 0.09, 2.3);
+  let mythic = Math.min(1.1 + lift * 0.26, 9);
+  let legendary = Math.min(2.2 + lift * 0.38, 16);
+  let rare = Math.min(14 + lift * 0.82, 38);
+  let common = 100 - eternal - mythic - legendary - rare;
+
+  for (let index = 0; index < upgradeCount; index += 1) {
+    if (common > 0) {
+      const commonFraction = Math.min(common, 1) / 1;
+      eternal += oddsUpgradeShift.eternal * commonFraction;
+      mythic += oddsUpgradeShift.mythic * commonFraction;
+      legendary += oddsUpgradeShift.legendary * commonFraction;
+      rare += oddsUpgradeShift.rare * commonFraction;
+      common -= commonFraction;
+
+      const rareFraction = 1 - commonFraction;
+      if (rareFraction > 0) {
+        const rareDrain = oddsUpgradeShift.eternal + oddsUpgradeShift.mythic + oddsUpgradeShift.legendary;
+        const affordableFraction = Math.min(rare, rareDrain * rareFraction) / (rareDrain * rareFraction);
+        eternal += oddsUpgradeShift.eternal * rareFraction * affordableFraction;
+        mythic += oddsUpgradeShift.mythic * rareFraction * affordableFraction;
+        legendary += oddsUpgradeShift.legendary * rareFraction * affordableFraction;
+        rare -= rareDrain * rareFraction * affordableFraction;
+      }
+      continue;
+    }
+
+    const rareDrain = oddsUpgradeShift.eternal + oddsUpgradeShift.mythic + oddsUpgradeShift.legendary;
+    const affordableFraction = rareDrain > 0 ? Math.min(rare, rareDrain) / rareDrain : 0;
+    eternal += oddsUpgradeShift.eternal * affordableFraction;
+    mythic += oddsUpgradeShift.mythic * affordableFraction;
+    legendary += oddsUpgradeShift.legendary * affordableFraction;
+    rare -= rareDrain * affordableFraction;
+  }
+
   const highTotal = eternal + mythic + legendary + rare;
   if (highTotal > 100) {
     const scale = 100 / highTotal;
@@ -221,7 +272,7 @@ function rarityOdds(stage, bonus = 0) {
     legendary *= scale;
     rare *= scale;
   }
-  const common = Math.max(100 - eternal - mythic - legendary - rare, 0);
+  common = Math.max(100 - eternal - mythic - legendary - rare, 0);
   return [
     { rarity: "eternal", chance: eternal },
     { rarity: "mythic", chance: mythic },
@@ -495,6 +546,7 @@ function resetRunState(options = {}) {
     targetId: null,
     damage: "",
     effects: [],
+    speech: null,
     tauntId: null,
     banner: options.banner || "Pick a branch to begin the next fight.",
     locked: false
@@ -549,6 +601,7 @@ function startBattle(encounterType = "fight") {
     targetId: null,
     damage: "",
     effects: [],
+    speech: null,
     tauntId: null,
     banner: `${label} begins. Teams line up.`,
     locked: true
@@ -584,6 +637,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
     state.currentRound = round;
     pushLog(`Round ${round}`);
     state.combat.effects = [];
+    state.combat.speech = null;
     state.combat.tauntId = null;
     if (!await triggerRoundStartAbilities(token)) return;
     const actors = [...living(state.team).map((unit) => ({ id: unit.id, unit, side: "ally" })), ...living(state.enemies).map((unit) => ({ id: unit.id, unit, side: "enemy" }))]
@@ -608,6 +662,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
             state.combat.targetId = unit.id;
             state.combat.damage = "";
             state.combat.effects = teamHeals.map((heal) => ({ id: heal.target.id, text: `+${heal.amount}`, kind: "heal" }));
+            state.combat.speech = null;
             state.combat.banner = `${unit.name} prepares a team heal for ${total} total HP.`;
             playSound("heal", "medic");
             render();
@@ -633,6 +688,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
           state.combat.effects = amount > 0
             ? [{ id: healTarget.id, text: `+${amount}`, kind: "heal" }]
             : [{ id: unit.id, text: "READY", kind: "ability" }];
+          state.combat.speech = null;
           state.combat.banner = amount > 0
             ? `${unit.name} prepares to heal ${healTarget.name} for ${amount}.`
             : `${unit.name} holds a heal. Nobody needs patching up.`;
@@ -667,6 +723,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       state.combat.targetId = target.id;
       state.combat.damage = "";
       state.combat.effects = [];
+      state.combat.speech = null;
       state.combat.banner = `${unit.name} prepares to strike ${target.name}.`;
       playSound("attack", roleForUnit(unit).id);
       render();
@@ -689,6 +746,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         const recoil = Math.max(1, Math.ceil(unit.atk / 2));
         unit.hp -= recoil;
         state.combat.effects.push({ id: unit.id, text: `-${recoil}`, kind: "damage" });
+        showCombatSpeech(unit, "Check this shit out");
         pushLog(`Lucas also damages himself for ${recoil}.`);
         if (unit.hp <= 0) pushLog("Lucas immediately regrets checking that out.");
       }
@@ -721,6 +779,7 @@ function finishBattle(won, encounterType = "fight") {
   state.combat.targetId = null;
   state.combat.damage = "";
   state.combat.effects = [];
+  state.combat.speech = null;
   state.combat.tauntId = null;
   state.combat.locked = false;
   state.currentRound = 0;
@@ -756,6 +815,7 @@ async function triggerRoundStartAbilities(token) {
   state.combat.targetId = tank.id;
   state.combat.damage = "";
   state.combat.effects = [{ id: tank.id, text: "TAUNT", kind: "ability" }];
+  state.combat.speech = null;
   state.combat.tauntId = tank.id;
   state.combat.banner = `${tank.name} spends full guard charge and taunts the enemies this round.`;
   pushLog(`${tank.name} spends guard charge. Enemies must target them this round.`);
@@ -795,6 +855,7 @@ async function resolveEternalTurnStart(unit, token) {
     state.combat.targetId = unit.id;
     state.combat.damage = "";
     state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability" }];
+    showCombatSpeech(unit, "Still on duties.");
     state.combat.banner = `${unit.name} is still handling wifely duties.`;
     pushLog(`${unit.name} sits this turn out.`);
     playSound("ability", roleForUnit(unit).id);
@@ -809,6 +870,7 @@ async function resolveEternalTurnStart(unit, token) {
     state.combat.targetId = unit.id;
     state.combat.damage = "";
     state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability" }];
+    showCombatSpeech(unit, "I have wifely duties.");
     state.combat.banner = `${unit.name}: "I have wifely duties."`;
     pushLog(`${unit.name} has wifely duties and sits out.`);
     playSound("ability", "tank");
@@ -822,6 +884,7 @@ async function resolveEternalTurnStart(unit, token) {
     state.combat.targetId = unit.id;
     state.combat.damage = "";
     state.combat.effects = [{ id: unit.id, text: "???", kind: "ability" }];
+    showCombatSpeech(unit, "Uhhhhhhh");
     state.combat.banner = `${unit.name} takes a gummy and forgets what a turn is.`;
     pushLog(`${unit.name}: Uhhhhhhh`);
     playSound("ability", "brawler");
@@ -843,6 +906,7 @@ async function resolveJamieOutburst(unit, token) {
   state.combat.targetId = target.id;
   state.combat.damage = "";
   state.combat.effects = [{ id: target.id, text: "fuck you", kind: "curse" }];
+  showCombatSpeech(unit, "fuck you");
   state.combat.banner = `${unit.name} heals, then immediately yells at ${target.name}.`;
   pushLog(`${unit.name} to ${target.name}: fuck you.`);
   playSound("hit", "medic");
@@ -850,6 +914,10 @@ async function resolveJamieOutburst(unit, token) {
   await wait(520);
   if (token !== state.battleToken) return;
   if (target.hp <= 0) pushLog(`${target.name} falls from emotional damage.`);
+}
+
+function showCombatSpeech(unit, text) {
+  state.combat.speech = { id: unit.id, text };
 }
 
 function weakestLivingAlly() {
@@ -1049,7 +1117,7 @@ function makeShopItems() {
   return [
     { id: "heal", title: "Warm Saucer", detail: "Heal the full team.", cost: 5, action: () => healTeam(true) },
     { id: "buff", title: "Polished Button", detail: `Give a random ally +2 power and +2 HP. Price rises after each buy. Bought ${state.buffPurchases} times.`, cost: buffCost(), action: buffRandom },
-    { id: "odds", title: "Loaded Dice", detail: `Upgrade recruit odds: +0.1% Eternal, +0.2% Mythic, +0.3% Legendary, +0.4% Rare. Bought ${state.oddsUpgrades} times.`, cost: oddsUpgradeCost(), action: upgradeRarityOdds },
+    { id: "odds", title: "Loaded Dice", detail: `Trade low-tier odds upward. Common feeds Eternal/Mythic/Legendary/Rare first; once Common hits 0%, Rare feeds Eternal/Mythic/Legendary. Bought ${state.oddsUpgrades} times.`, cost: oddsUpgradeCost(), action: upgradeRarityOdds },
     { id: "hire", title: "Stray Contract", detail: "Add a recruit rolled at shop odds.", cost: 10, action: hireFromShop }
   ];
 }
@@ -1503,6 +1571,7 @@ function makeUnitCard(unit) {
   classSlot.className = "class-slot";
   classSlot.textContent = "";
   classSlot.append(makeRoleBadge(role, "", unit.trait));
+  if (unit.eternalKey) classSlot.append(makeEternalModifierBadge(unit.eternalKey));
   if (unitHasRole(unit, "tank") || unitHasRole(unit, "medic")) classSlot.append(makeAbilityChargeMeter(unit));
   node.querySelector(".hp").textContent = `HP ${Math.max(0, unit.hp)}/${unit.maxHp}`;
   node.querySelector(".atk").textContent = powerStatText(unit);
@@ -1516,13 +1585,17 @@ function makeFighter(unit) {
   const role = roleForUnit(unit);
   const combatEffect = combatEffectFor(unit);
   const token = document.createElement("article");
-  token.className = `fighter-token ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
+  token.className = `fighter-token ${unit.rarity} ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
   if (unit.eternalKey) token.classList.add(`eternal-${unit.eternalKey}`);
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 96;
   drawSprite(canvas, unit);
   const roleBadge = makeRoleBadge(role, "small");
+  const badgeRow = document.createElement("span");
+  badgeRow.className = "token-badges";
+  badgeRow.append(roleBadge);
+  if (unit.eternalKey) badgeRow.append(makeEternalModifierBadge(unit.eternalKey, "small"));
   const name = document.createElement("strong");
   name.textContent = unit.name;
   const hpbar = document.createElement("div");
@@ -1533,13 +1606,19 @@ function makeFighter(unit) {
   const stats = document.createElement("div");
   stats.className = "token-stats";
   stats.textContent = `HP ${Math.max(0, unit.hp)}  ${powerStatText(unit)}  ${levelStatText(unit)}`;
-  token.append(canvas, roleBadge, name, hpbar, stats);
+  token.append(canvas, badgeRow, name, hpbar, stats);
   if (unitHasRole(unit, "tank") || unitHasRole(unit, "medic")) token.append(makeAbilityChargeMeter(unit));
   if (combatEffect) {
     const damage = document.createElement("div");
     damage.className = `damage-pop ${combatEffect.kind}-pop`;
     damage.textContent = combatEffect.text;
     token.append(damage);
+  }
+  if (state.combat.speech?.id === unit.id) {
+    const speech = document.createElement("div");
+    speech.className = "speech-bubble";
+    speech.textContent = state.combat.speech.text;
+    token.append(speech);
   }
   return token;
 }
@@ -1586,6 +1665,35 @@ function makeRoleBadge(role, size = "", description = role.description) {
   tooltip.append(title, detail);
   badge.append(tooltip);
   return badge;
+}
+
+function makeEternalModifierBadge(key, size = "") {
+  const modifier = eternalModifiers[key];
+  if (!modifier) return document.createTextNode("");
+  const badge = document.createElement("span");
+  badge.className = `class-badge eternal-modifier ${size}`.trim();
+  badge.style.setProperty("--role-color", rarityData.eternal.color);
+  badge.tabIndex = 0;
+  badge.setAttribute("aria-label", `${modifier.title}: ${modifier.detail}`);
+  badge.append(makeEternalModifierIcon());
+
+  const tooltip = document.createElement("span");
+  tooltip.className = "class-tooltip eternal-tooltip";
+  const title = document.createElement("strong");
+  title.textContent = modifier.title;
+  const detail = document.createElement("small");
+  detail.textContent = modifier.detail;
+  tooltip.append(title, detail);
+  badge.append(tooltip);
+  return badge;
+}
+
+function makeEternalModifierIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = '<path d="M12 3l2.4 5.1 5.6.8-4 4 1 5.7-5-2.7-5 2.7 1-5.7-4-4 5.6-.8L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 8v4M12 15h.1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
+  return svg;
 }
 
 function makeRoleIcon(roleId) {
@@ -1738,9 +1846,9 @@ function drawEternalSprite(canvas, key) {
   }
 
   if (key === "phillip") {
-    px(3, 2, 10, 2, "#caa06a");
-    px(4, 1, 8, 2, "#d7b37e");
-    px(5, 3, 6, 2, "#caa06a");
+    px(3, 2, 10, 2, "#11151d");
+    px(4, 1, 8, 2, "#2d3340");
+    px(5, 3, 6, 2, "#0a0d13");
     px(6, 4, 4, 3, "#f0c3a2");
     px(6, 6, 1, 1, "#11151d");
     px(9, 6, 1, 1, "#11151d");
