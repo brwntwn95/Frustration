@@ -3,12 +3,80 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Frustration Rummy</title>
-    <link rel="stylesheet" href="/styles.css">
+    <title>Lordoran: Branchbound</title>
+    <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <main id="app"></main>
-    <div id="toast" role="status" aria-live="polite"></div>
-    <script src="/client.js"></script>
+    <main class="shell">
+      <section class="topbar" aria-label="Run status">
+        <div class="brand">
+          <canvas id="lordoranBadge" width="88" height="88" aria-hidden="true"></canvas>
+          <div>
+            <p class="kicker">Lordoran: Branchbound</p>
+            <h1>Rogue Auto-Battler</h1>
+          </div>
+        </div>
+        <div class="run-stats">
+          <div><span>Stage</span><strong id="stageText">1</strong></div>
+          <div><span>Coins</span><strong id="coinText">10</strong></div>
+          <div><span>Threat</span><strong id="threatText">1</strong></div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <aside class="panel roster-panel" aria-label="Party">
+          <div class="panel-head">
+            <h2>Team</h2>
+            <span id="teamCount">1/5</span>
+          </div>
+          <div id="teamList" class="team-list"></div>
+        </aside>
+
+        <section class="battle-wrap" aria-label="Battlefield and events">
+          <div class="battlefield">
+            <div class="side">
+              <h2>Your Squad</h2>
+              <div id="allyBoard" class="fighters"></div>
+            </div>
+            <div class="versus">VS</div>
+            <div class="side enemy-side">
+              <h2>Encounter</h2>
+              <div id="enemyBoard" class="fighters"></div>
+            </div>
+          </div>
+
+          <div class="event-panel">
+            <div class="panel-head">
+              <h2 id="phaseTitle">Choose a Route</h2>
+              <button id="newRunButton" class="ghost-btn" type="button">New Run</button>
+            </div>
+            <div id="routeChoices" class="route-grid"></div>
+            <div id="rewardChoices" class="reward-grid is-hidden"></div>
+            <div id="shopPanel" class="shop-panel is-hidden"></div>
+            <div id="battleLog" class="battle-log" aria-live="polite"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="unitCardTemplate">
+      <article class="unit-card">
+        <canvas width="96" height="96" aria-hidden="true"></canvas>
+        <div class="unit-info">
+          <div class="unit-title-row">
+            <h3></h3>
+            <span class="rarity-pill"></span>
+          </div>
+          <p class="trait"></p>
+          <div class="stat-row">
+            <span class="hp"></span>
+            <span class="atk"></span>
+            <span class="spd"></span>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="game.js"></script>
   </body>
 </html>

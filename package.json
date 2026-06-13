@@ -1,8 +1,8 @@
 {
-  "name": "frustration-web",
+  "name": "lordoran-branchbound",
   "version": "0.1.0",
+  "description": "A browser roguelike auto-battler starring Lordoran, a very large cartoon cat.",
   "private": true,
-  "description": "A small web multiplayer version of Frustration Rummy for family games.",
   "scripts": {
     "start": "node server.js"
   },
