@@ -17,16 +17,20 @@ const enemyNames = [
   "Bristle Mite", "Oathless Pawn", "Moldy Banner", "Tin Warden", "Crooked Mask"
 ];
 
-const traits = [
-  "First strike: acts early in every clash.",
-  "Bulwark: carries extra HP into battle.",
-  "Snack pact: gives Lordoran +1 attack when hired.",
-  "Backline zap: clips the last foe after attacking.",
-  "Lucky paws: improves post-fight coin rewards.",
-  "Medic: heals the weakest ally after a win.",
-  "Brawler: gains attack when surviving a hit.",
-  "Collector: adds a reroll coin after rewards."
+const classRoles = [
+  { id: "scout", label: "Scout", icon: ">", color: "#7bdff2", hp: 0, atk: 0, spd: 3, description: "Acts early in every clash." },
+  { id: "tank", label: "Tank", icon: "T", color: "#72d68b", hp: 7, atk: -1, spd: -1, description: "Bulky defender. Every 3rd round taunts and forces enemy attacks onto them." },
+  { id: "snack", label: "Snack Pact", icon: "O", color: "#ffb26b", hp: 1, atk: 0, spd: 0, description: "Feeds Lordoran when hired, giving him +1 attack." },
+  { id: "backliner", label: "Backliner", icon: "/", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. After attacking, clips the farthest enemy for 1 extra damage." },
+  { id: "collector", label: "Collector", icon: "$", color: "#f1c44e", hp: 0, atk: 0, spd: 0, description: "Adds 1 coin when hired and improves post-fight coin rewards." },
+  { id: "medic", label: "Medic", icon: "+", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals instead of attacking. Every 3rd round heals the whole team." },
+  { id: "brawler", label: "Brawler", icon: "F", color: "#f06a6a", hp: 2, atk: 1, spd: -1, description: "Bruiser role. Gains +1 attack after landing a hit." },
+  { id: "lordoran", label: "Lordoran", icon: "L", color: "#b9fff4", hp: 0, atk: 0, spd: 0, description: "Main character: cannot be sold and grows rounder with every win." },
+  { id: "enemy", label: "Enemy", icon: "!", color: "#f06a6a", hp: 0, atk: 0, spd: 0, description: "Hostile unit on the branch." }
 ];
+
+const roleById = Object.fromEntries(classRoles.map((role) => [role.id, role]));
+const recruitRoles = classRoles.filter((role) => !["lordoran", "enemy"].includes(role.id));
 
 const routeTemplates = [
   { type: "fight", label: "Skirmish", title: "Crooked Path", detail: "Normal enemy team. Pays coins and a choice of three recruits.", coins: "+stage", danger: "normal", odds: "base" },
@@ -52,8 +56,13 @@ const state = {
   team: [],
   enemies: [],
   routes: [],
+  mapColumns: [],
+  pastMapColumns: [],
+  mapPan: { x: 0, y: -780 },
+  mapDragMoved: false,
   pathHistory: [],
   currentNode: "Camp",
+  currentNodePosition: { laneIndex: 1.5, y: 1030 },
   rewards: [],
   shop: [],
   log: [],
@@ -61,6 +70,8 @@ const state = {
     activeId: null,
     targetId: null,
     damage: "",
+    effects: [],
+    tauntId: null,
     banner: "Pick a branch to begin the next fight.",
     locked: false
   },
@@ -99,7 +110,8 @@ function makeLordoran() {
     id: crypto.randomUUID(),
     name: "Lordoran",
     rarity: "eternal",
-    trait: "Main character: cannot be sold and grows rounder with every win.",
+    role: "lordoran",
+    trait: roleById.lordoran.description,
     hp: 18,
     maxHp: 18,
     atk: 4,
@@ -125,10 +137,10 @@ function pick(list, rnd = Math.random) {
 
 function rarityOdds(stage, bonus = 0) {
   const lift = Math.min(18, stage * 1.35 + bonus);
-  const eternal = Math.min(0.8 + lift * 0.18, 7);
-  const legendary = Math.min(4 + lift * 0.58, 23);
-  const rare = Math.min(18 + lift * 1.15, 48);
-  const common = Math.max(100 - eternal - legendary - rare, 22);
+  const eternal = Math.min(0.35 + lift * 0.11, 4.5);
+  const legendary = Math.min(2.4 + lift * 0.42, 17);
+  const rare = Math.min(14 + lift * 0.86, 39);
+  const common = Math.max(100 - eternal - legendary - rare, 39);
   return [
     { rarity: "eternal", chance: eternal },
     { rarity: "legendary", chance: legendary },
@@ -153,17 +165,18 @@ function makeHero(stage = state.stage, bonus = 0) {
   const rarity = rollRarity(stage, bonus, rnd);
   const stat = rarityData[rarity].stat;
   const speedBias = Math.floor(rnd() * 3);
-  const trait = pick(traits, rnd);
-  const maxHp = 6 + stage + stat * 2 + Math.floor(rnd() * 5) + (trait.includes("Bulwark") ? 5 : 0);
+  const role = pick(recruitRoles, rnd);
+  const maxHp = Math.max(3, 6 + stage + stat * 2 + role.hp + Math.floor(rnd() * 5));
   return {
     id: crypto.randomUUID(),
     name: pick(names, rnd),
     rarity,
-    trait,
+    role: role.id,
+    trait: role.description,
     hp: maxHp,
     maxHp,
-    atk: 2 + Math.floor(stage / 2) + stat + Math.floor(rnd() * 3),
-    spd: 1 + speedBias + Math.floor(stat / 2) + (trait.includes("First strike") ? 3 : 0),
+    atk: Math.max(1, 2 + Math.floor(stage / 2) + stat + role.atk + Math.floor(rnd() * 3)),
+    spd: Math.max(0, 1 + speedBias + Math.floor(stat / 2) + role.spd),
     seed,
     type: "hero"
   };
@@ -178,6 +191,7 @@ function makeEnemy(difficulty, elite = false) {
     id: crypto.randomUUID(),
     name: pick(enemyNames, rnd),
     rarity: elite ? "rare" : "common",
+    role: "enemy",
     trait: elite ? "Elite pressure." : "Stage threat.",
     hp,
     maxHp: hp,
@@ -199,32 +213,66 @@ function healTeam(full = true) {
   });
 }
 
+function recoverTeam(percent = 0.2) {
+  state.team.forEach((unit) => {
+    const amount = Math.max(1, Math.ceil(unit.maxHp * percent));
+    unit.hp = Math.min(unit.maxHp, Math.max(1, unit.hp) + amount);
+  });
+}
+
 function generateRoutes() {
-  const specialType = rollSpecialRoute();
-  const specialLane = specialType ? Math.floor(Math.random() * 4) : -1;
-  state.routes = laneNames.map((lane, laneIndex) => {
-    const type = laneIndex === specialLane ? specialType : rollCombatRoute();
+  while (state.mapColumns.length < 8) {
+    state.mapColumns.push(makeMapColumn(state.stage + state.mapColumns.length + 1));
+  }
+  state.routes = state.mapColumns[0] || [];
+}
+
+function makeMapColumn(depth) {
+  const count = 2 + Math.floor(Math.random() * 3);
+  const lanes = [...laneNames].sort(() => Math.random() - 0.5).slice(0, count).sort((a, b) => laneNames.indexOf(a) - laneNames.indexOf(b));
+  const specialType = rollSpecialRoute(depth);
+  const specialLane = specialType ? Math.floor(Math.random() * lanes.length) : -1;
+  return lanes.map((lane, index) => {
+    const type = index === specialLane ? specialType : rollCombatRoute(depth);
     const route = randomRouteTemplate(type);
     return {
       ...route,
       id: crypto.randomUUID(),
       lane,
-      laneIndex,
-      depth: state.stage + 1
+      laneIndex: laneNames.indexOf(lane),
+      depth
     };
   });
 }
 
-function rollCombatRoute() {
-  if (state.stage <= 1) return "fight";
-  const eliteChance = Math.min(0.08 + state.stage * 0.018, 0.32);
+function advanceMap() {
+  state.mapColumns.shift();
+  state.mapPan = mapPanForCurrent();
+  generateRoutes();
+}
+
+function mapXForLane(laneIndex, offset = 0) {
+  return 185 + laneIndex * 130 + offset;
+}
+
+function mapPanForCurrent() {
+  const currentX = mapXForLane(state.currentNodePosition.laneIndex);
+  return {
+    x: Math.max(-160, Math.min(160, 380 - currentX)),
+    y: Math.max(-900, Math.min(-560, 170 - state.currentNodePosition.y))
+  };
+}
+
+function rollCombatRoute(depth = state.stage) {
+  if (depth <= 2) return "fight";
+  const eliteChance = Math.min(0.06 + depth * 0.016, 0.3);
   return Math.random() < eliteChance ? "elite" : "fight";
 }
 
-function rollSpecialRoute() {
+function rollSpecialRoute(depth = state.stage) {
   const roll = Math.random();
-  const shopChance = state.stage <= 1 ? 0.06 : 0.11;
-  const eventChance = state.stage <= 1 ? 0.06 : 0.10;
+  const shopChance = depth <= 2 ? 0.04 : 0.1;
+  const eventChance = depth <= 2 ? 0.04 : 0.09;
   if (roll < shopChance) return "shop";
   if (roll < shopChance + eventChance) return "mystery";
   return null;
@@ -276,14 +324,21 @@ function resetRunState(options = {}) {
   state.phase = "route";
   state.team = [makeLordoran()];
   state.enemies = [];
+  state.mapColumns = [];
+  state.pastMapColumns = [];
+  state.mapPan = { x: 0, y: -780 };
+  state.mapDragMoved = false;
   state.pathHistory = [];
   state.currentNode = "Camp";
+  state.currentNodePosition = { laneIndex: 1.5, y: 1030 };
   state.rewards = [];
   state.shop = [];
   state.combat = {
     activeId: null,
     targetId: null,
     damage: "",
+    effects: [],
+    tauntId: null,
     banner: options.banner || "Pick a branch to begin the next fight.",
     locked: false
   };
@@ -297,9 +352,19 @@ function resetRunState(options = {}) {
 
 function startRoute(route) {
   if (state.combat.locked) return;
+  state.pastMapColumns = [
+    ...state.pastMapColumns,
+    {
+      id: crypto.randomUUID(),
+      routes: state.routes.map((mapRoute) => ({ ...mapRoute })),
+      selectedId: route.id,
+      fromPosition: { ...state.currentNodePosition }
+    }
+  ].slice(-5);
   state.currentNode = route.title;
+  state.currentNodePosition = { laneIndex: route.laneIndex, y: 900 };
   state.pathHistory = [...state.pathHistory, route].slice(-6);
-  state.routes = [];
+  advanceMap();
   clearChoices();
   if (route.type === "shop") {
     openShop();
@@ -323,6 +388,8 @@ function startBattle(elite = false) {
     activeId: null,
     targetId: null,
     damage: "",
+    effects: [],
+    tauntId: null,
     banner: `${elite ? "Elite zone" : "Skirmish"} begins. Teams line up.`,
     locked: true
   };
@@ -349,6 +416,9 @@ async function playBattle(elite = false, token = state.battleToken) {
 
   while (token === state.battleToken && living(state.team).length && living(state.enemies).length && round < 30) {
     pushLog(`Round ${round}`);
+    state.combat.effects = [];
+    state.combat.tauntId = null;
+    if (!await triggerRoundStartAbilities(round, token)) return;
     const actors = [...living(state.team).map((unit) => ({ id: unit.id, unit, side: "ally" })), ...living(state.enemies).map((unit) => ({ id: unit.id, unit, side: "enemy" }))]
       .sort((a, b) => battleSpeed(b.unit) - battleSpeed(a.unit) || b.unit.atk - a.unit.atk);
 
@@ -356,13 +426,75 @@ async function playBattle(elite = false, token = state.battleToken) {
       if (token !== state.battleToken) return;
       const unit = getBattleUnit(actor.id);
       if (!unit || unit.hp <= 0) continue;
-      const targets = actor.side === "ally" ? living(state.enemies) : living(state.team);
+
+      if (actor.side === "ally" && unitHasRole(unit, "medic")) {
+        if (round % 3 === 0) {
+          const teamHeals = living(state.team)
+            .map((target) => ({ target, amount: medicHealAmount(target) }))
+            .filter((heal) => heal.amount > 0);
+          if (teamHeals.length) {
+            const total = teamHeals.reduce((sum, heal) => sum + heal.amount, 0);
+            state.combat.activeId = unit.id;
+            state.combat.targetId = unit.id;
+            state.combat.damage = "";
+            state.combat.effects = teamHeals.map((heal) => ({ id: heal.target.id, text: `+${heal.amount}`, kind: "heal" }));
+            state.combat.banner = `${unit.name} prepares a team heal for ${total} total HP.`;
+            playSound("heal");
+            render();
+            await wait(420);
+            if (token !== state.battleToken) return;
+            teamHeals.forEach((heal) => {
+              heal.target.hp = Math.min(heal.target.maxHp, heal.target.hp + heal.amount);
+            });
+            state.combat.banner = `${unit.name} heals the whole team for ${total} total HP.`;
+            pushLog(`${unit.name} heals the whole team for ${total} total HP.`);
+            render();
+            await wait(700);
+            continue;
+          }
+        }
+        const healTarget = weakestLivingAlly();
+        if (healTarget) {
+          const amount = medicHealAmount(healTarget);
+          state.combat.activeId = unit.id;
+          state.combat.targetId = healTarget.id;
+          state.combat.damage = "";
+          state.combat.effects = amount > 0
+            ? [{ id: healTarget.id, text: `+${amount}`, kind: "heal" }]
+            : [{ id: unit.id, text: "READY", kind: "ability" }];
+          state.combat.banner = amount > 0
+            ? `${unit.name} prepares to heal ${healTarget.name} for ${amount}.`
+            : `${unit.name} holds a heal. Nobody needs patching up.`;
+          playSound("heal");
+          render();
+          await wait(360);
+          if (token !== state.battleToken) return;
+          if (amount <= 0) {
+            await wait(300);
+            continue;
+          }
+          healTarget.hp = Math.min(healTarget.maxHp, healTarget.hp + amount);
+          state.combat.effects = [{ id: healTarget.id, text: `+${amount}`, kind: "heal" }];
+          state.combat.banner = `${unit.name} heals ${healTarget.name} for ${amount}.`;
+          pushLog(`${unit.name} heals ${healTarget.name} for ${amount}.`);
+          render();
+          await wait(620);
+          continue;
+        }
+      }
+
+      let targets = actor.side === "ally" ? living(state.enemies) : living(state.team);
+      if (actor.side === "enemy") {
+        const taunter = getBattleUnit(state.combat.tauntId);
+        if (taunter && taunter.hp > 0) targets = [taunter];
+      }
       if (!targets.length) break;
-      const target = targets[0];
+      const target = pick(targets);
 
       state.combat.activeId = unit.id;
       state.combat.targetId = target.id;
       state.combat.damage = "";
+      state.combat.effects = [];
       state.combat.banner = `${unit.name} prepares to strike ${target.name}.`;
       playSound("attack");
       render();
@@ -371,6 +503,7 @@ async function playBattle(elite = false, token = state.battleToken) {
 
       target.hp -= unit.atk;
       state.combat.damage = `-${unit.atk}`;
+      state.combat.effects = [{ id: target.id, text: `-${unit.atk}`, kind: "damage" }];
       state.combat.banner = `${unit.name} hits ${target.name} for ${unit.atk}.`;
       playSound("hit");
       pushLog(`${unit.name} hits ${target.name} for ${unit.atk}.`);
@@ -378,14 +511,15 @@ async function playBattle(elite = false, token = state.battleToken) {
         pushLog(`${target.name} falls.`);
       }
 
-      if (unit.trait.includes("Backline") && targets.length > 1) {
+      if (unitHasRole(unit, "backliner") && targets.length > 1) {
         const back = targets[targets.length - 1];
         if (back !== target) {
           back.hp -= 1;
+          state.combat.effects.push({ id: back.id, text: "-1", kind: "damage" });
           pushLog(`${unit.name} zaps ${back.name}.`);
         }
       }
-      if (unit.trait.includes("Brawler") && unit.hp > 0) {
+      if (unitHasRole(unit, "brawler") && unit.hp > 0) {
         unit.atk += 1;
         pushLog(`${unit.name} brawls up to ${unit.atk} attack.`);
       }
@@ -403,9 +537,11 @@ function finishBattle(won, elite = false) {
   state.combat.activeId = null;
   state.combat.targetId = null;
   state.combat.damage = "";
+  state.combat.effects = [];
+  state.combat.tauntId = null;
   state.combat.locked = false;
   if (won) {
-    const bonusCoins = state.team.filter((unit) => unit.trait.includes("Lucky")).length;
+    const bonusCoins = state.team.filter((unit) => unitHasRole(unit, "collector")).length;
     const coins = 5 + state.stage + (elite ? 6 : 0) + bonusCoins;
     awardCoins(coins);
     state.levelsCleared += 1;
@@ -414,9 +550,6 @@ function finishBattle(won, elite = false) {
     state.team[0].maxHp += 1;
     state.team[0].hp = state.team[0].maxHp;
     state.team[0].atk += state.stage % 2 === 0 ? 1 : 0;
-    state.team.forEach((unit) => {
-      if (unit.trait.includes("Medic")) healWeakest(3);
-    });
     state.combat.banner = `Victory. Choose one recruit or take coins.`;
     pushLog(`Victory. The squad pockets ${coins} coins.`);
     openRewards(elite ? 7 : 0);
@@ -428,6 +561,53 @@ function finishBattle(won, elite = false) {
 
 function living(units) {
   return units.filter((unit) => unit.hp > 0);
+}
+
+async function triggerRoundStartAbilities(round, token) {
+  if (round % 3 !== 0) return true;
+  const tank = living(state.team).find((unit) => unitHasRole(unit, "tank"));
+  if (!tank) return true;
+  state.combat.activeId = tank.id;
+  state.combat.targetId = tank.id;
+  state.combat.damage = "";
+  state.combat.effects = [{ id: tank.id, text: "TAUNT", kind: "ability" }];
+  state.combat.tauntId = tank.id;
+  state.combat.banner = `${tank.name} braces up and taunts the enemies this round.`;
+  pushLog(`${tank.name} taunts. Enemies must target them this round.`);
+  playSound("attack");
+  render();
+  await wait(620);
+  return token === state.battleToken;
+}
+
+function weakestLivingAlly() {
+  const allies = living(state.team);
+  if (!allies.length) return null;
+  return [...allies].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+}
+
+function medicHealAmount(target) {
+  const missingHp = Math.max(0, target.maxHp - Math.max(0, target.hp));
+  const baseHeal = Math.max(2, Math.ceil(target.maxHp * 0.18));
+  return Math.min(baseHeal, missingHp);
+}
+
+function roleForUnit(unit) {
+  if (unit.role && roleById[unit.role]) return roleById[unit.role];
+  if (unit.type === "lordoran") return roleById.lordoran;
+  if (unit.type === "enemy") return roleById.enemy;
+  if (unit.trait?.includes("Medic")) return roleById.medic;
+  if (unit.trait?.includes("Brawler")) return roleById.brawler;
+  if (unit.trait?.includes("Backline")) return roleById.backliner;
+  if (unit.trait?.includes("Bulwark")) return roleById.tank;
+  if (unit.trait?.includes("First strike")) return roleById.scout;
+  if (unit.trait?.includes("Snack")) return roleById.snack;
+  if (unit.trait?.includes("Collector") || unit.trait?.includes("Lucky")) return roleById.collector;
+  return roleById.scout;
+}
+
+function unitHasRole(unit, roleId) {
+  return roleForUnit(unit).id === roleId;
 }
 
 function getBattleUnit(id) {
@@ -474,6 +654,18 @@ function playSound(kind) {
     return;
   }
 
+  if (kind === "heal") {
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(360, now);
+    osc.frequency.exponentialRampToValueAtTime(620, now + 0.12);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.07, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    osc.start(now);
+    osc.stop(now + 0.2);
+    return;
+  }
+
   osc.type = "square";
   osc.frequency.setValueAtTime(130, now);
   osc.frequency.exponentialRampToValueAtTime(70, now + 0.08);
@@ -511,7 +703,7 @@ function healWeakest(amount) {
 function openRewards(bonus = 0) {
   state.phase = "reward";
   state.lastRewardBonus = bonus;
-  healTeam(false);
+  recoverTeam(0.18);
   state.rewards = Array.from({ length: 3 }, () => makeHero(state.stage, bonus));
 }
 
@@ -528,11 +720,11 @@ function recruit(hero) {
 }
 
 function applyHireTrait(hero) {
-  if (hero.trait.includes("Snack")) {
+  if (unitHasRole(hero, "snack")) {
     state.team[0].atk += 1;
     addLog("Lordoran accepts a snack pact and gains +1 attack.");
   }
-  if (hero.trait.includes("Collector")) {
+  if (unitHasRole(hero, "collector")) {
     awardCoins(1);
   }
 }
@@ -553,7 +745,6 @@ function continueRun() {
   state.shop = [];
   state.enemies = [];
   state.combat.banner = `Stage ${state.stage}: choose the next branch.`;
-  healTeam(true);
   generateRoutes();
   render();
 }
@@ -660,6 +851,25 @@ function renderTeam() {
   els.teamList.innerHTML = "";
   state.team.forEach((unit) => {
     const card = makeUnitCard(unit);
+    card.draggable = !state.combat.locked;
+    card.dataset.unitId = unit.id;
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/plain", unit.id);
+      event.dataTransfer.effectAllowed = "move";
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => card.classList.remove("dragging"));
+    card.addEventListener("dragover", (event) => {
+      if (state.combat.locked) return;
+      event.preventDefault();
+      card.classList.add("drop-target");
+    });
+    card.addEventListener("dragleave", () => card.classList.remove("drop-target"));
+    card.addEventListener("drop", (event) => {
+      event.preventDefault();
+      card.classList.remove("drop-target");
+      reorderTeam(event.dataTransfer.getData("text/plain"), unit.id);
+    });
     if (!unit.locked && ["reward", "shop"].includes(state.phase)) {
       const button = document.createElement("button");
       button.className = "sell-btn";
@@ -670,6 +880,17 @@ function renderTeam() {
     }
     els.teamList.append(card);
   });
+}
+
+function reorderTeam(sourceId, targetId) {
+  if (!sourceId || !targetId || sourceId === targetId || state.combat.locked) return;
+  const from = state.team.findIndex((unit) => unit.id === sourceId);
+  const to = state.team.findIndex((unit) => unit.id === targetId);
+  if (from < 0 || to < 0) return;
+  const [unit] = state.team.splice(from, 1);
+  state.team.splice(to, 0, unit);
+  addLog(`${unit.name} changes position.`);
+  render();
 }
 
 function renderBoard() {
@@ -696,7 +917,7 @@ function renderPhase() {
   if (state.phase === "route") {
     els.phaseTitle.textContent = "Choose a Route";
     const scoreNote = state.lastScore ? ` Last run scored ${state.lastScore.score}.` : "";
-    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Choose one of four forward branches; shops and events are rare special nodes.${scoreNote}`;
+    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Choose one of the reachable forward branches; shops and events are rare special nodes.${scoreNote}`;
     renderOdds(0);
     renderRoutes();
   } else if (state.phase === "reward") {
@@ -730,26 +951,177 @@ function renderOdds(bonus = 0) {
 
 function renderRoutes() {
   els.routeChoices.innerHTML = "";
-  els.routeChoices.className = "route-grid map-view";
-  const current = document.createElement("div");
-  current.className = "map-current";
+  els.routeChoices.className = "route-map-shell";
+
+  const viewport = document.createElement("div");
+  viewport.className = "route-map-viewport";
+  viewport.setAttribute("aria-label", "Drag route map to inspect future branches");
+
+  const tilt = document.createElement("div");
+  tilt.className = "route-map-tilt";
+  const tiltGrid = document.createElement("div");
+  tiltGrid.className = "route-map-grid";
+  tilt.append(tiltGrid);
+
+  const content = document.createElement("div");
+  content.className = "route-map-content";
+  content.style.transform = `translate(${state.mapPan.x}px, ${state.mapPan.y}px)`;
+
+  const lineLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  lineLayer.classList.add("route-lines");
+  lineLayer.setAttribute("viewBox", "0 0 760 1160");
+  lineLayer.setAttribute("preserveAspectRatio", "none");
+
   const trail = state.pathHistory.length
     ? state.pathHistory.map((route) => route.label).join(" -> ")
     : "Run start";
-  current.innerHTML = `<span>Current Node</span><strong>${state.currentNode}</strong><p>Stage ${state.stage}</p><div class="map-trail">${trail}</div>`;
-  const branches = document.createElement("div");
-  branches.className = "map-branches";
+  const currentNode = {
+    id: "current",
+    x: mapXForLane(state.currentNodePosition.laneIndex),
+    y: state.currentNodePosition.y,
+    type: "current",
+    label: "Here",
+    title: state.currentNode,
+    detail: `Stage ${state.stage}. ${trail}`
+  };
+  const nodes = [currentNode];
 
-  state.routes.forEach((route) => {
-    const button = document.createElement("button");
-    button.className = `route-card map-node ${route.type}`;
-    button.type = "button";
-    button.innerHTML = `<span class="lane-label">${route.lane}</span><span class="route-kind">${route.label}</span><strong>${route.title}</strong><p>${route.detail}</p><div class="route-meta"><span>${route.danger} danger</span><span>${route.coins} coins</span><span>${route.odds} odds</span></div>`;
-    button.addEventListener("click", () => startRoute(route));
-    branches.append(button);
+  [...state.pastMapColumns].reverse().forEach((entry, pastIndex) => {
+    entry.routes.forEach((route) => {
+      const taken = route.id === entry.selectedId;
+      nodes.push({
+        ...route,
+        id: `past-${entry.id}-${route.id}`,
+        x: mapXForLane(route.laneIndex, pastIndex % 2 ? -22 : 8),
+        y: state.currentNodePosition.y + 130 + pastIndex * 115,
+        columnIndex: null,
+        pastIndex,
+        historyState: taken ? "taken" : "skipped",
+        label: taken ? `${route.label} - taken` : `${route.label} - skipped`
+      });
+    });
   });
 
-  els.routeChoices.append(current, branches);
+  state.mapColumns.forEach((column, columnIndex) => {
+    column.forEach((route) => {
+      nodes.push({
+        ...route,
+        x: mapXForLane(route.laneIndex, columnIndex % 2 ? 22 : -8),
+        y: state.currentNodePosition.y - 130 - columnIndex * 115,
+        columnIndex
+      });
+    });
+  });
+
+  drawRouteLines(lineLayer, nodes);
+  content.append(lineLayer);
+
+  nodes.forEach((node) => {
+    const button = document.createElement("button");
+    button.className = `route-icon-node ${node.type} ${node.columnIndex === 0 ? "selectable" : ""} ${node.historyState || ""}`;
+    button.type = "button";
+    button.style.left = `${node.x}px`;
+    button.style.top = `${node.y}px`;
+    button.setAttribute("aria-disabled", String(node.type === "current" || node.columnIndex !== 0 || node.historyState));
+    button.innerHTML = `<span class="node-symbol">${routeIcon(node.type)}</span><span class="node-tooltip"><strong>${node.title}</strong><em>${node.label || rarityData[node.rarity]?.label || ""}</em>${node.detail}<small>${node.danger || "current"} / ${node.coins || "run"} / ${node.odds || "base"}</small></span>`;
+    if (node.columnIndex === 0) {
+      button.addEventListener("pointerdown", (event) => event.stopPropagation());
+      button.addEventListener("click", () => {
+        if (!state.mapDragMoved) startRoute(node);
+      });
+    }
+    content.append(button);
+  });
+
+  viewport.append(tilt, content);
+  setupMapPan(viewport, content);
+
+  const caption = document.createElement("div");
+  caption.className = "route-map-caption";
+  const nextCount = state.routes.length;
+  caption.textContent = `${nextCount} reachable branches. Drag the map to inspect the seed ahead and the branches left behind. Hover nodes for details.`;
+  els.routeChoices.append(viewport, caption);
+}
+
+function routeIcon(type) {
+  if (type === "current") return "L";
+  if (type === "fight") return "S";
+  if (type === "elite") return "!";
+  if (type === "shop") return "$";
+  if (type === "mystery") return "?";
+  return "*";
+}
+
+function drawRouteLines(svg, nodes) {
+  const current = nodes.find((node) => node.type === "current");
+  const columns = state.mapColumns.map((column, columnIndex) => nodes.filter((node) => node.columnIndex === columnIndex));
+  const pastColumns = [...new Set(nodes.filter((node) => node.historyState).map((node) => node.pastIndex))]
+    .sort((a, b) => a - b)
+    .map((pastIndex) => nodes.filter((node) => node.pastIndex === pastIndex));
+
+  pastColumns.forEach((column, index) => {
+    const anchor = index === 0
+      ? current
+      : pastColumns[index - 1].find((node) => node.historyState === "taken");
+    if (!anchor) return;
+    column.forEach((node) => appendRouteLine(svg, node, anchor, node.historyState === "taken" ? "taken" : "skipped"));
+  });
+
+  if (current && columns[0]) {
+    columns[0].forEach((node) => appendRouteLine(svg, current, node, "active"));
+  }
+  for (let index = 0; index < columns.length - 1; index += 1) {
+    columns[index].forEach((from) => {
+      columns[index + 1].forEach((to) => {
+        if (Math.abs(from.laneIndex - to.laneIndex) <= 2) appendRouteLine(svg, from, to, "future");
+      });
+    });
+  }
+}
+
+function appendRouteLine(svg, from, to, kind = "future") {
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", from.x);
+  line.setAttribute("y1", from.y);
+  line.setAttribute("x2", to.x);
+  line.setAttribute("y2", to.y);
+  line.classList.add(`${kind}-route-line`);
+  svg.append(line);
+}
+
+function setupMapPan(viewport, plane) {
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let baseX = 0;
+  let baseY = 0;
+  viewport.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    state.mapDragMoved = false;
+    startX = event.clientX;
+    startY = event.clientY;
+    baseX = state.mapPan.x;
+    baseY = state.mapPan.y;
+    viewport.setPointerCapture?.(event.pointerId);
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (Math.abs(dx) + Math.abs(dy) > 4) state.mapDragMoved = true;
+    state.mapPan.x = Math.max(-160, Math.min(160, baseX + dx));
+    state.mapPan.y = Math.max(-900, Math.min(-560, baseY + dy));
+    plane.style.transform = `translate(${state.mapPan.x}px, ${state.mapPan.y}px)`;
+  });
+  const endDrag = (event) => {
+    dragging = false;
+    viewport.releasePointerCapture?.(event.pointerId);
+    window.setTimeout(() => {
+      state.mapDragMoved = false;
+    }, 0);
+  };
+  viewport.addEventListener("pointerup", endDrag);
+  viewport.addEventListener("pointercancel", endDrag);
 }
 
 function renderRewards() {
@@ -810,10 +1182,14 @@ function renderLog() {
 
 function makeUnitCard(unit) {
   const node = els.unitTemplate.content.firstElementChild.cloneNode(true);
+  const role = roleForUnit(unit);
   node.classList.add(unit.rarity);
   node.querySelector("h3").textContent = unit.name;
   node.querySelector(".rarity-pill").textContent = rarityData[unit.rarity].label;
-  node.querySelector(".trait").textContent = unit.trait;
+  const classSlot = node.querySelector(".trait");
+  classSlot.className = "class-slot";
+  classSlot.textContent = "";
+  classSlot.append(makeRoleBadge(role));
   node.querySelector(".hp").textContent = `HP ${Math.max(0, unit.hp)}/${unit.maxHp}`;
   node.querySelector(".atk").textContent = `ATK ${unit.atk}`;
   node.querySelector(".spd").textContent = `SPD ${unit.spd}`;
@@ -822,12 +1198,14 @@ function makeUnitCard(unit) {
 }
 
 function makeFighter(unit) {
+  const role = roleForUnit(unit);
   const token = document.createElement("article");
   token.className = `fighter-token ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""}`;
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 96;
   drawSprite(canvas, unit);
+  const roleBadge = makeRoleBadge(role, "small");
   const name = document.createElement("strong");
   name.textContent = unit.name;
   const hpbar = document.createElement("div");
@@ -838,14 +1216,46 @@ function makeFighter(unit) {
   const stats = document.createElement("div");
   stats.className = "token-stats";
   stats.textContent = `HP ${Math.max(0, unit.hp)}  ATK ${unit.atk}`;
-  token.append(canvas, name, hpbar, stats);
-  if (state.combat.targetId === unit.id && state.combat.damage) {
+  token.append(canvas, roleBadge, name, hpbar, stats);
+  const combatEffect = combatEffectFor(unit);
+  if (combatEffect) {
     const damage = document.createElement("div");
-    damage.className = "damage-pop";
-    damage.textContent = state.combat.damage;
+    damage.className = `damage-pop ${combatEffect.kind}-pop`;
+    damage.textContent = combatEffect.text;
     token.append(damage);
   }
   return token;
+}
+
+function makeRoleBadge(role, size = "") {
+  const badge = document.createElement("span");
+  badge.className = `class-badge role-${role.id} ${size}`.trim();
+  badge.style.setProperty("--role-color", role.color);
+  badge.tabIndex = 0;
+  badge.setAttribute("aria-label", `${role.label}: ${role.description}`);
+  badge.textContent = role.icon;
+
+  const tooltip = document.createElement("span");
+  tooltip.className = "class-tooltip";
+  const title = document.createElement("strong");
+  title.textContent = role.label;
+  const detail = document.createElement("small");
+  detail.textContent = role.description;
+  tooltip.append(title, detail);
+  badge.append(tooltip);
+  return badge;
+}
+
+function combatEffectFor(unit) {
+  const explicitEffect = state.combat.effects?.find((effect) => effect.id === unit.id);
+  if (explicitEffect) return explicitEffect;
+  if (state.combat.targetId !== unit.id || !state.combat.damage) return null;
+  const kind = state.combat.damage.startsWith("+")
+    ? "heal"
+    : state.combat.damage.startsWith("-")
+      ? "damage"
+      : "ability";
+  return { text: state.combat.damage, kind };
 }
 
 function drawSprite(canvas, unit) {
