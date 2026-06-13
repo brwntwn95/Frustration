@@ -111,6 +111,22 @@ h1 {
   line-height: 0.95;
 }
 
+.title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.version-badge {
+  flex: 0 0 auto;
+  color: var(--teal);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  opacity: 0.76;
+}
+
 .run-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(78px, 1fr));
@@ -269,6 +285,7 @@ h1 {
 .class-slot {
   display: flex;
   align-items: center;
+  gap: 7px;
   min-height: 30px;
   margin-top: 5px;
 }
@@ -289,10 +306,22 @@ h1 {
   box-shadow: 0 0 12px color-mix(in srgb, var(--role-color) 42%, transparent);
 }
 
+.class-badge svg {
+  width: 19px;
+  height: 19px;
+  overflow: visible;
+  color: inherit;
+}
+
 .class-badge.small {
   width: 24px;
   height: 24px;
   font-size: 0.74rem;
+}
+
+.class-badge.small svg {
+  width: 15px;
+  height: 15px;
 }
 
 .class-tooltip {
@@ -448,6 +477,22 @@ h1 {
   animation: targetPulse 420ms ease;
 }
 
+.fighter-token.ability-burst {
+  border-color: var(--blue);
+  animation: abilityBurst 760ms ease both;
+}
+
+.fighter-token.ability-burst::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border: 2px solid rgba(74, 163, 255, 0.78);
+  border-radius: 12px;
+  opacity: 0;
+  animation: guardRing 760ms ease both;
+  pointer-events: none;
+}
+
 .fighter-token.defeated {
   filter: grayscale(1);
   opacity: 0.45;
@@ -488,6 +533,26 @@ h1 {
   color: var(--muted);
   font-size: 0.73rem;
   font-weight: 900;
+}
+
+.tank-charge {
+  display: grid;
+  grid-template-columns: repeat(3, 12px);
+  gap: 3px;
+  height: 7px;
+  margin-top: -1px;
+}
+
+.tank-charge span {
+  display: block;
+  background: rgba(74, 163, 255, 0.12);
+  border: 1px solid rgba(74, 163, 255, 0.58);
+  border-radius: 2px;
+}
+
+.tank-charge span.filled {
+  background: var(--blue);
+  box-shadow: 0 0 7px rgba(74, 163, 255, 0.75);
 }
 
 .damage-pop {
@@ -1160,6 +1225,34 @@ h1 {
 
   100% {
     transform: translateX(0);
+  }
+}
+
+@keyframes abilityBurst {
+  0% {
+    transform: translateY(-2px) scale(1);
+    box-shadow: 0 0 0 rgba(74, 163, 255, 0);
+  }
+
+  40% {
+    transform: translateY(-8px) scale(1.05);
+    box-shadow: 0 0 0 4px rgba(74, 163, 255, 0.22), 0 0 28px rgba(74, 163, 255, 0.44);
+  }
+
+  100% {
+    transform: translateY(-6px) scale(1);
+  }
+}
+
+@keyframes guardRing {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.74);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.34);
   }
 }
 

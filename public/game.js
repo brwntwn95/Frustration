@@ -1,3 +1,5 @@
+const appVersion = "v0.1.0";
+
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
   rare: { label: "Rare", color: "#a46cff", value: 5, stat: 2 },
@@ -18,19 +20,20 @@ const enemyNames = [
 ];
 
 const classRoles = [
-  { id: "scout", label: "Scout", icon: ">", color: "#7bdff2", hp: 0, atk: 0, spd: 3, description: "Acts early in every clash." },
-  { id: "tank", label: "Tank", icon: "T", color: "#72d68b", hp: 7, atk: -1, spd: -1, description: "Bulky defender. Every 3rd round taunts and forces enemy attacks onto them." },
-  { id: "snack", label: "Snack Pact", icon: "O", color: "#ffb26b", hp: 1, atk: 0, spd: 0, description: "Feeds Lordoran when hired, giving him +1 attack." },
-  { id: "backliner", label: "Backliner", icon: "/", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. After attacking, clips the farthest enemy for 1 extra damage." },
-  { id: "collector", label: "Collector", icon: "$", color: "#f1c44e", hp: 0, atk: 0, spd: 0, description: "Adds 1 coin when hired and improves post-fight coin rewards." },
-  { id: "medic", label: "Medic", icon: "+", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals instead of attacking. Every 3rd round heals the whole team." },
-  { id: "brawler", label: "Brawler", icon: "F", color: "#f06a6a", hp: 2, atk: 1, spd: -1, description: "Bruiser role. Gains +1 attack after landing a hit." },
-  { id: "lordoran", label: "Lordoran", icon: "L", color: "#b9fff4", hp: 0, atk: 0, spd: 0, description: "Main character: cannot be sold and grows rounder with every win." },
-  { id: "enemy", label: "Enemy", icon: "!", color: "#f06a6a", hp: 0, atk: 0, spd: 0, description: "Hostile unit on the branch." }
+  { id: "scout", label: "Scout", color: "#7bdff2", hp: 0, atk: 0, spd: 3, description: "Acts early in every clash." },
+  { id: "tank", label: "Tank", color: "#4aa3ff", hp: 7, atk: -1, spd: -1, description: "Bulky defender. Gains guard charge when attacked, then taunts enemies when full." },
+  { id: "snack", label: "Snack Pact", color: "#ffb26b", hp: 1, atk: 0, spd: 0, description: "Feeds Lordoran when hired, giving him +1 attack." },
+  { id: "backliner", label: "Backliner", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. After attacking, clips the farthest enemy for 1 extra damage." },
+  { id: "collector", label: "Collector", color: "#f1c44e", hp: 0, atk: 0, spd: 0, description: "Adds 1 coin when hired and improves post-fight coin rewards." },
+  { id: "medic", label: "Medic", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals instead of attacking. Every 3rd round heals the whole team." },
+  { id: "brawler", label: "Brawler", color: "#f06a6a", hp: 2, atk: 1, spd: -1, description: "Bruiser role. Gains +1 attack after landing a hit." },
+  { id: "lordoran", label: "Lordoran", color: "#b9fff4", hp: 0, atk: 0, spd: 0, description: "Main character: cannot be sold and grows rounder with every win." },
+  { id: "enemy", label: "Enemy", color: "#f06a6a", hp: 0, atk: 0, spd: 0, description: "Hostile unit on the branch." }
 ];
 
 const roleById = Object.fromEntries(classRoles.map((role) => [role.id, role]));
 const recruitRoles = classRoles.filter((role) => !["lordoran", "enemy"].includes(role.id));
+const tankChargeMax = 3;
 
 const routeTemplates = [
   { type: "fight", label: "Skirmish", title: "Crooked Path", detail: "Normal enemy team. Pays coins and a choice of three recruits.", coins: "+stage", danger: "normal", odds: "base" },
@@ -102,6 +105,7 @@ const els = {
   soundButton: document.querySelector("#soundButton"),
   newRunButton: document.querySelector("#newRunButton"),
   lordoranBadge: document.querySelector("#lordoranBadge"),
+  versionBadge: document.querySelector("#versionBadge"),
   unitTemplate: document.querySelector("#unitCardTemplate")
 };
 
@@ -177,6 +181,7 @@ function makeHero(stage = state.stage, bonus = 0) {
     maxHp,
     atk: Math.max(1, 2 + Math.floor(stage / 2) + stat + role.atk + Math.floor(rnd() * 3)),
     spd: Math.max(0, 1 + speedBias + Math.floor(stat / 2) + role.spd),
+    tankCharge: role.id === "tank" ? 0 : undefined,
     seed,
     type: "hero"
   };
@@ -418,7 +423,7 @@ async function playBattle(elite = false, token = state.battleToken) {
     pushLog(`Round ${round}`);
     state.combat.effects = [];
     state.combat.tauntId = null;
-    if (!await triggerRoundStartAbilities(round, token)) return;
+    if (!await triggerRoundStartAbilities(token)) return;
     const actors = [...living(state.team).map((unit) => ({ id: unit.id, unit, side: "ally" })), ...living(state.enemies).map((unit) => ({ id: unit.id, unit, side: "enemy" }))]
       .sort((a, b) => battleSpeed(b.unit) - battleSpeed(a.unit) || b.unit.atk - a.unit.atk);
 
@@ -439,7 +444,7 @@ async function playBattle(elite = false, token = state.battleToken) {
             state.combat.damage = "";
             state.combat.effects = teamHeals.map((heal) => ({ id: heal.target.id, text: `+${heal.amount}`, kind: "heal" }));
             state.combat.banner = `${unit.name} prepares a team heal for ${total} total HP.`;
-            playSound("heal");
+            playSound("heal", "medic");
             render();
             await wait(420);
             if (token !== state.battleToken) return;
@@ -465,7 +470,7 @@ async function playBattle(elite = false, token = state.battleToken) {
           state.combat.banner = amount > 0
             ? `${unit.name} prepares to heal ${healTarget.name} for ${amount}.`
             : `${unit.name} holds a heal. Nobody needs patching up.`;
-          playSound("heal");
+          playSound("heal", "medic");
           render();
           await wait(360);
           if (token !== state.battleToken) return;
@@ -496,7 +501,7 @@ async function playBattle(elite = false, token = state.battleToken) {
       state.combat.damage = "";
       state.combat.effects = [];
       state.combat.banner = `${unit.name} prepares to strike ${target.name}.`;
-      playSound("attack");
+      playSound("attack", roleForUnit(unit).id);
       render();
       await wait(360);
       if (token !== state.battleToken) return;
@@ -505,8 +510,11 @@ async function playBattle(elite = false, token = state.battleToken) {
       state.combat.damage = `-${unit.atk}`;
       state.combat.effects = [{ id: target.id, text: `-${unit.atk}`, kind: "damage" }];
       state.combat.banner = `${unit.name} hits ${target.name} for ${unit.atk}.`;
-      playSound("hit");
+      playSound("hit", roleForUnit(unit).id);
       pushLog(`${unit.name} hits ${target.name} for ${unit.atk}.`);
+      if (actor.side === "enemy" && unitHasRole(target, "tank")) {
+        chargeTank(target);
+      }
       if (target.hp <= 0) {
         pushLog(`${target.name} falls.`);
       }
@@ -563,21 +571,32 @@ function living(units) {
   return units.filter((unit) => unit.hp > 0);
 }
 
-async function triggerRoundStartAbilities(round, token) {
-  if (round % 3 !== 0) return true;
-  const tank = living(state.team).find((unit) => unitHasRole(unit, "tank"));
+async function triggerRoundStartAbilities(token) {
+  const tank = living(state.team).find((unit) => unitHasRole(unit, "tank") && tankCharge(unit) >= tankChargeMax);
   if (!tank) return true;
+  tank.tankCharge = 0;
   state.combat.activeId = tank.id;
   state.combat.targetId = tank.id;
   state.combat.damage = "";
   state.combat.effects = [{ id: tank.id, text: "TAUNT", kind: "ability" }];
   state.combat.tauntId = tank.id;
-  state.combat.banner = `${tank.name} braces up and taunts the enemies this round.`;
-  pushLog(`${tank.name} taunts. Enemies must target them this round.`);
-  playSound("attack");
+  state.combat.banner = `${tank.name} spends full guard charge and taunts the enemies this round.`;
+  pushLog(`${tank.name} spends guard charge. Enemies must target them this round.`);
+  playSound("ability", "tank");
   render();
-  await wait(620);
+  await wait(760);
   return token === state.battleToken;
+}
+
+function tankCharge(unit) {
+  return Math.max(0, Math.min(tankChargeMax, unit.tankCharge || 0));
+}
+
+function chargeTank(unit) {
+  unit.tankCharge = Math.min(tankChargeMax, tankCharge(unit) + 1);
+  if (unit.tankCharge >= tankChargeMax) {
+    pushLog(`${unit.name}'s guard is fully charged.`);
+  }
 }
 
 function weakestLivingAlly() {
@@ -633,7 +652,7 @@ function getAudioContext() {
   return state.audio;
 }
 
-function playSound(kind) {
+function playSound(kind, roleId = "") {
   const audio = getAudioContext();
   if (!audio) return;
   const now = audio.currentTime;
@@ -642,38 +661,36 @@ function playSound(kind) {
   osc.connect(gain);
   gain.connect(audio.destination);
 
-  if (kind === "attack") {
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(520, now);
-    osc.frequency.exponentialRampToValueAtTime(240, now + 0.09);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-    osc.start(now);
-    osc.stop(now + 0.13);
-    return;
-  }
-
-  if (kind === "heal") {
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(360, now);
-    osc.frequency.exponentialRampToValueAtTime(620, now + 0.12);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.07, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-    osc.start(now);
-    osc.stop(now + 0.2);
-    return;
-  }
-
-  osc.type = "square";
-  osc.frequency.setValueAtTime(130, now);
-  osc.frequency.exponentialRampToValueAtTime(70, now + 0.08);
+  const profile = soundProfile(kind, roleId);
+  osc.type = profile.type;
+  osc.frequency.setValueAtTime(profile.from, now);
+  osc.frequency.exponentialRampToValueAtTime(profile.to, now + profile.slide);
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.11, now + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+  gain.gain.exponentialRampToValueAtTime(profile.volume, now + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + profile.length);
   osc.start(now);
-  osc.stop(now + 0.17);
+  osc.stop(now + profile.length + 0.02);
+}
+
+function soundProfile(kind, roleId) {
+  const attackProfiles = {
+    brawler: { type: "square", from: 180, to: 82, slide: 0.1, length: 0.16, volume: 0.12 },
+    backliner: { type: "sawtooth", from: 760, to: 310, slide: 0.07, length: 0.12, volume: 0.07 },
+    scout: { type: "triangle", from: 680, to: 420, slide: 0.06, length: 0.1, volume: 0.07 },
+    tank: { type: "square", from: 240, to: 160, slide: 0.12, length: 0.18, volume: 0.09 },
+    lordoran: { type: "triangle", from: 420, to: 210, slide: 0.11, length: 0.16, volume: 0.1 }
+  };
+  const hitProfiles = {
+    brawler: { type: "square", from: 120, to: 54, slide: 0.09, length: 0.17, volume: 0.13 },
+    backliner: { type: "triangle", from: 520, to: 180, slide: 0.08, length: 0.13, volume: 0.09 },
+    tank: { type: "square", from: 160, to: 90, slide: 0.12, length: 0.18, volume: 0.11 },
+    enemy: { type: "sawtooth", from: 190, to: 70, slide: 0.09, length: 0.16, volume: 0.09 }
+  };
+  if (kind === "heal") return { type: "sine", from: 360, to: 720, slide: 0.14, length: 0.22, volume: 0.075 };
+  if (kind === "ability" && roleId === "tank") return { type: "square", from: 150, to: 360, slide: 0.16, length: 0.26, volume: 0.13 };
+  if (kind === "attack") return attackProfiles[roleId] || { type: "triangle", from: 520, to: 240, slide: 0.09, length: 0.13, volume: 0.08 };
+  if (kind === "hit") return hitProfiles[roleId] || { type: "square", from: 130, to: 70, slide: 0.08, length: 0.17, volume: 0.11 };
+  return { type: "square", from: 130, to: 70, slide: 0.08, length: 0.17, volume: 0.11 };
 }
 
 function toggleSound() {
@@ -837,6 +854,7 @@ function render() {
   els.coinText.textContent = state.coins;
   els.threatText.textContent = Number.isInteger(state.threat) ? state.threat : state.threat.toFixed(1);
   els.scoreText.textContent = state.currentScore;
+  els.versionBadge.textContent = appVersion;
   els.teamCount.textContent = `${state.team.length}/5`;
   els.battleBanner.textContent = state.combat.banner;
   renderTeam();
@@ -1190,6 +1208,7 @@ function makeUnitCard(unit) {
   classSlot.className = "class-slot";
   classSlot.textContent = "";
   classSlot.append(makeRoleBadge(role));
+  if (unitHasRole(unit, "tank")) classSlot.append(makeTankChargeMeter(unit));
   node.querySelector(".hp").textContent = `HP ${Math.max(0, unit.hp)}/${unit.maxHp}`;
   node.querySelector(".atk").textContent = `ATK ${unit.atk}`;
   node.querySelector(".spd").textContent = `SPD ${unit.spd}`;
@@ -1199,8 +1218,9 @@ function makeUnitCard(unit) {
 
 function makeFighter(unit) {
   const role = roleForUnit(unit);
+  const combatEffect = combatEffectFor(unit);
   const token = document.createElement("article");
-  token.className = `fighter-token ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""}`;
+  token.className = `fighter-token ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 96;
@@ -1217,7 +1237,7 @@ function makeFighter(unit) {
   stats.className = "token-stats";
   stats.textContent = `HP ${Math.max(0, unit.hp)}  ATK ${unit.atk}`;
   token.append(canvas, roleBadge, name, hpbar, stats);
-  const combatEffect = combatEffectFor(unit);
+  if (unitHasRole(unit, "tank")) token.append(makeTankChargeMeter(unit));
   if (combatEffect) {
     const damage = document.createElement("div");
     damage.className = `damage-pop ${combatEffect.kind}-pop`;
@@ -1227,13 +1247,25 @@ function makeFighter(unit) {
   return token;
 }
 
+function makeTankChargeMeter(unit) {
+  const meter = document.createElement("div");
+  meter.className = "tank-charge";
+  meter.setAttribute("aria-label", `Guard charge ${tankCharge(unit)} of ${tankChargeMax}`);
+  for (let index = 0; index < tankChargeMax; index += 1) {
+    const pip = document.createElement("span");
+    if (index < tankCharge(unit)) pip.className = "filled";
+    meter.append(pip);
+  }
+  return meter;
+}
+
 function makeRoleBadge(role, size = "") {
   const badge = document.createElement("span");
   badge.className = `class-badge role-${role.id} ${size}`.trim();
   badge.style.setProperty("--role-color", role.color);
   badge.tabIndex = 0;
   badge.setAttribute("aria-label", `${role.label}: ${role.description}`);
-  badge.textContent = role.icon;
+  badge.append(makeRoleIcon(role.id));
 
   const tooltip = document.createElement("span");
   tooltip.className = "class-tooltip";
@@ -1244,6 +1276,29 @@ function makeRoleBadge(role, size = "") {
   tooltip.append(title, detail);
   badge.append(tooltip);
   return badge;
+}
+
+function makeRoleIcon(roleId) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = roleIconMarkup(roleId);
+  return svg;
+}
+
+function roleIconMarkup(roleId) {
+  const icons = {
+    scout: '<path d="M4 13h10l-3-4 8 3-8 3 3-4H4z" fill="currentColor"/><path d="M5 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    tank: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6l7-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 7v9M8.5 10h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    snack: '<path d="M12 7c4 0 6 3 5 7-1 5-4 7-5 5-1 2-4 0-5-5-1-4 1-7 5-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 7c0-3 2-4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    backliner: '<path d="M15 3l6 6-8 8-3-3 8-8-3-3z" fill="currentColor"/><path d="M8 13l3 3-4 4H4v-3l4-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+    collector: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v10M15 9.5c-.8-1-2.2-1.3-3.4-.8-1.4.6-1.4 2.4.1 2.9l1.4.5c1.7.6 1.6 2.7-.1 3.2-1.3.4-2.8 0-3.7-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    medic: '<rect x="5" y="5" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+    brawler: '<path d="M6 10V7.5a1.5 1.5 0 0 1 3 0V10M9 10V6.5a1.5 1.5 0 0 1 3 0V10M12 10V7a1.5 1.5 0 0 1 3 0v3M15 10V8.5a1.5 1.5 0 0 1 3 0V13c0 4-2.5 7-6.5 7H10c-3 0-5-2-5-5v-3a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+    lordoran: '<path d="M6 9L4 5l4 2a8 8 0 0 1 8 0l4-2-2 4c1 1.2 1.5 2.6 1.5 4 0 4-3.4 7-7.5 7S4.5 17 4.5 13c0-1.4.5-2.8 1.5-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12h.1M15 12h.1M10 16c1.2.8 2.8.8 4 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    enemy: '<path d="M7 20v-3c-2-1.2-3-3.2-3-5.5C4 7 7.5 4 12 4s8 3 8 7.5c0 2.3-1 4.3-3 5.5v3H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 11h.1M15 11h.1M10 16h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+  };
+  return icons[roleId] || icons.scout;
 }
 
 function combatEffectFor(unit) {
