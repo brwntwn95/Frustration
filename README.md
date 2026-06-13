@@ -8,6 +8,7 @@ A browser based roguelike auto-battler prototype starring Lordoran, a large cart
 - FTL-style forward map choices with four branches per stage, where shops and events are rarer special nodes.
 - Five-member party limit with selling between stages.
 - Coins, shops, healing, buffs, and recruit rewards.
+- Early fights use a slow difficulty ramp that roughly tracks party size.
 - Rarity rolls that improve as the run advances:
   - Common: blue
   - Rare: purple

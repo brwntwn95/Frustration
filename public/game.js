@@ -338,7 +338,7 @@ function finishBattle(won, elite = false) {
     const bonusCoins = state.team.filter((unit) => unit.trait.includes("Lucky")).length;
     const coins = 5 + state.stage + (elite ? 6 : 0) + bonusCoins;
     state.coins += coins;
-    state.threat += elite ? 2 : 1;
+    state.threat += elite ? 1 : 0.5;
     state.team[0].maxHp += 1;
     state.team[0].hp = state.team[0].maxHp;
     state.team[0].atk += state.stage % 2 === 0 ? 1 : 0;
@@ -523,7 +523,7 @@ function clearChoices() {
 function render() {
   els.stageText.textContent = state.stage;
   els.coinText.textContent = state.coins;
-  els.threatText.textContent = state.threat;
+  els.threatText.textContent = Number.isInteger(state.threat) ? state.threat : state.threat.toFixed(1);
   els.teamCount.textContent = `${state.team.length}/5`;
   els.battleBanner.textContent = state.combat.banner;
   renderTeam();
@@ -559,8 +559,8 @@ function renderBoard() {
 
 function previewEnemies() {
   if (state.phase !== "route") return [];
-  return Array.from({ length: Math.min(4, 2 + Math.floor(state.stage / 2)) }, (_, index) => ({
-    ...makeEnemy(state.stage + state.threat, false),
+  return Array.from({ length: enemyCount(false) }, (_, index) => ({
+    ...makeEnemy(enemyDifficulty(false), false),
     id: `preview-${index}`
   }));
 }
@@ -820,7 +820,7 @@ function newRun() {
   state.battleToken += 1;
   state.stage = 1;
   state.coins = 10;
-  state.threat = 1;
+  state.threat = 0;
   state.phase = "route";
   state.team = [makeLordoran()];
   state.enemies = [];

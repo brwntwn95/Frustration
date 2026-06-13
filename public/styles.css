@@ -158,6 +158,13 @@ h1 {
   margin-bottom: 12px;
 }
 
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .panel-head h2,
 .side h2 {
   font-size: 1rem;
@@ -518,6 +525,10 @@ h1 {
   background: #151922;
   border: 1px solid rgba(246, 242, 232, 0.14);
   border-radius: 6px;
+}
+
+.icon-btn {
+  min-width: 92px;
 }
 
 .ghost-btn:hover,
