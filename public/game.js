@@ -29,24 +29,39 @@ const traits = [
 ];
 
 const routeTemplates = [
-  { type: "fight", label: "Skirmish", title: "Crooked Path", detail: "A fair fight with normal coin and recruit rewards." },
-  { type: "fight", label: "Skirmish", title: "Lantern Road", detail: "A balanced encounter and a clean branch onward." },
-  { type: "elite", label: "Elite", title: "Hard Zone", detail: "Tougher enemies, better coin payout, stronger reward odds." },
-  { type: "shop", label: "Shop", title: "Pocket Market", detail: "Spend coins on buffs, healing, and fresh recruits." },
-  { type: "mystery", label: "Event", title: "Odd Door", detail: "A strange stop that may pay out or turn dangerous." }
+  { type: "fight", label: "Skirmish", title: "Crooked Path", detail: "Normal enemy team. Pays coins and a choice of three recruits.", coins: "+stage", danger: "normal", odds: "base" },
+  { type: "fight", label: "Skirmish", title: "Lantern Road", detail: "Balanced battle with a clean branch onward.", coins: "+stage", danger: "normal", odds: "base" },
+  { type: "fight", label: "Skirmish", title: "Moss Bridge", detail: "A direct enemy team blocks the next step.", coins: "+stage", danger: "normal", odds: "base" },
+  { type: "elite", label: "Elite", title: "Hard Zone", detail: "Stronger enemy team. Better payout and higher reward rarity odds.", coins: "+6", danger: "high", odds: "+rarity" },
+  { type: "elite", label: "Elite", title: "Iron Fork", detail: "A risky route with stronger foes and better post-battle odds.", coins: "+6", danger: "high", odds: "+rarity" },
+  { type: "shop", label: "Shop", title: "Pocket Market", detail: "Spend coins on healing, buffs, or another recruit.", coins: "spend", danger: "none", odds: "shop" },
+  { type: "mystery", label: "Event", title: "Odd Door", detail: "May become coins, a recruit choice, or a dangerous ambush.", coins: "swingy", danger: "unknown", odds: "varies" }
 ];
+
+const laneNames = ["High Road", "Upper Fork", "Lower Fork", "Deep Road"];
 
 const state = {
   stage: 1,
   coins: 10,
-  threat: 1,
+  threat: 0,
   phase: "route",
   team: [],
   enemies: [],
   routes: [],
+  pathHistory: [],
+  currentNode: "Camp",
   rewards: [],
   shop: [],
   log: [],
+  combat: {
+    activeId: null,
+    targetId: null,
+    damage: "",
+    banner: "Pick a branch to begin the next fight.",
+    locked: false
+  },
+  battleToken: 0,
+  lastRewardBonus: 0,
   seed: Math.floor(Math.random() * 1000000)
 };
 
@@ -63,6 +78,9 @@ const els = {
   rewardChoices: document.querySelector("#rewardChoices"),
   shopPanel: document.querySelector("#shopPanel"),
   battleLog: document.querySelector("#battleLog"),
+  battleBanner: document.querySelector("#battleBanner"),
+  phaseStatus: document.querySelector("#phaseStatus"),
+  oddsBar: document.querySelector("#oddsBar"),
   newRunButton: document.querySelector("#newRunButton"),
   lordoranBadge: document.querySelector("#lordoranBadge"),
   unitTemplate: document.querySelector("#unitCardTemplate")
@@ -99,11 +117,15 @@ function pick(list, rnd = Math.random) {
 
 function rarityOdds(stage, bonus = 0) {
   const lift = Math.min(18, stage * 1.35 + bonus);
+  const eternal = Math.min(0.8 + lift * 0.18, 7);
+  const legendary = Math.min(4 + lift * 0.58, 23);
+  const rare = Math.min(18 + lift * 1.15, 48);
+  const common = Math.max(100 - eternal - legendary - rare, 22);
   return [
-    { rarity: "eternal", chance: Math.min(1.5 + lift * 0.12, 7) },
-    { rarity: "legendary", chance: Math.min(5 + lift * 0.45, 22) },
-    { rarity: "rare", chance: Math.min(22 + lift * 0.9, 48) },
-    { rarity: "common", chance: 100 }
+    { rarity: "eternal", chance: eternal },
+    { rarity: "legendary", chance: legendary },
+    { rarity: "rare", chance: rare },
+    { rarity: "common", chance: common }
   ];
 }
 
@@ -123,26 +145,27 @@ function makeHero(stage = state.stage, bonus = 0) {
   const rarity = rollRarity(stage, bonus, rnd);
   const stat = rarityData[rarity].stat;
   const speedBias = Math.floor(rnd() * 3);
-  const maxHp = 6 + stage + stat * 2 + Math.floor(rnd() * 5);
+  const trait = pick(traits, rnd);
+  const maxHp = 6 + stage + stat * 2 + Math.floor(rnd() * 5) + (trait.includes("Bulwark") ? 5 : 0);
   return {
     id: crypto.randomUUID(),
     name: pick(names, rnd),
     rarity,
-    trait: pick(traits, rnd),
+    trait,
     hp: maxHp,
     maxHp,
     atk: 2 + Math.floor(stage / 2) + stat + Math.floor(rnd() * 3),
-    spd: 1 + speedBias + Math.floor(stat / 2),
+    spd: 1 + speedBias + Math.floor(stat / 2) + (trait.includes("First strike") ? 3 : 0),
     seed,
     type: "hero"
   };
 }
 
-function makeEnemy(stage, elite = false) {
+function makeEnemy(difficulty, elite = false) {
   const seed = Math.floor(Math.random() * 9999999);
   const rnd = mulberry32(seed);
-  const boost = elite ? 3 : 0;
-  const hp = 5 + stage * 2 + boost + Math.floor(rnd() * (3 + stage));
+  const boost = elite ? Math.max(1, Math.floor(difficulty * 0.32)) : 0;
+  const hp = Math.round(4 + difficulty * 1.25 + boost * 1.4 + Math.floor(rnd() * (2 + difficulty * 0.65)));
   return {
     id: crypto.randomUUID(),
     name: pick(enemyNames, rnd),
@@ -150,8 +173,8 @@ function makeEnemy(stage, elite = false) {
     trait: elite ? "Elite pressure." : "Stage threat.",
     hp,
     maxHp: hp,
-    atk: 2 + Math.ceil(stage * 0.8) + boost + Math.floor(rnd() * 2),
-    spd: 1 + Math.floor(rnd() * 4) + (elite ? 1 : 0),
+    atk: 1 + Math.floor(difficulty * 0.45) + boost + Math.floor(rnd() * 2),
+    spd: 1 + Math.floor(rnd() * 3) + (elite ? 1 : 0),
     seed,
     type: "enemy"
   };
@@ -164,25 +187,50 @@ function cloneUnit(unit) {
 function healTeam(full = true) {
   state.team.forEach((unit) => {
     unit.maxHp = Math.max(unit.maxHp, unit.hp, 1);
-    unit.hp = full ? unit.maxHp : Math.min(unit.maxHp, unit.hp + 4);
+    unit.hp = full ? unit.maxHp : Math.min(unit.maxHp, Math.max(0, unit.hp) + 4);
   });
 }
 
 function generateRoutes() {
-  const pool = [...routeTemplates];
-  const routes = [];
-  while (routes.length < 3) {
-    const index = Math.floor(Math.random() * pool.length);
-    const route = pool.splice(index, 1)[0];
-    routes.push({ ...route, id: crypto.randomUUID() });
-  }
-  if (!routes.some((route) => route.type === "fight" || route.type === "elite")) {
-    routes[0] = { ...routeTemplates[0], id: crypto.randomUUID() };
-  }
-  state.routes = routes;
+  const specialType = rollSpecialRoute();
+  const specialLane = specialType ? Math.floor(Math.random() * 4) : -1;
+  state.routes = laneNames.map((lane, laneIndex) => {
+    const type = laneIndex === specialLane ? specialType : rollCombatRoute();
+    const route = randomRouteTemplate(type);
+    return {
+      ...route,
+      id: crypto.randomUUID(),
+      lane,
+      laneIndex,
+      depth: state.stage + 1
+    };
+  });
+}
+
+function rollCombatRoute() {
+  if (state.stage <= 1) return "fight";
+  const eliteChance = Math.min(0.08 + state.stage * 0.018, 0.32);
+  return Math.random() < eliteChance ? "elite" : "fight";
+}
+
+function rollSpecialRoute() {
+  const roll = Math.random();
+  const shopChance = state.stage <= 1 ? 0.06 : 0.11;
+  const eventChance = state.stage <= 1 ? 0.06 : 0.10;
+  if (roll < shopChance) return "shop";
+  if (roll < shopChance + eventChance) return "mystery";
+  return null;
+}
+
+function randomRouteTemplate(type) {
+  const matches = routeTemplates.filter((route) => route.type === type);
+  return pick(matches);
 }
 
 function startRoute(route) {
+  if (state.combat.locked) return;
+  state.currentNode = route.title;
+  state.pathHistory = [...state.pathHistory, route].slice(-6);
   state.routes = [];
   clearChoices();
   if (route.type === "shop") {
@@ -198,56 +246,94 @@ function startRoute(route) {
 
 function startBattle(elite = false) {
   state.phase = "battle";
-  const count = Math.min(5, 2 + Math.floor(state.stage / 2) + (elite ? 1 : 0));
-  state.enemies = Array.from({ length: count }, () => makeEnemy(state.stage + state.threat, elite));
+  state.battleToken += 1;
+  const token = state.battleToken;
+  const count = enemyCount(elite);
+  const difficulty = enemyDifficulty(elite);
+  state.enemies = Array.from({ length: count }, () => makeEnemy(difficulty, elite));
+  state.combat = {
+    activeId: null,
+    targetId: null,
+    damage: "",
+    banner: `${elite ? "Elite zone" : "Skirmish"} begins. Teams line up.`,
+    locked: true
+  };
   state.log = [`Stage ${state.stage}: ${elite ? "Elite zone" : "Skirmish"} begins.`];
   render();
-  window.setTimeout(() => resolveBattle(elite), 420);
+  window.setTimeout(() => playBattle(elite, token), 420);
 }
 
-function resolveBattle(elite = false) {
-  const allies = state.team.map(cloneUnit);
-  const enemies = state.enemies.map(cloneUnit);
+function enemyDifficulty(elite = false) {
+  const partyBonus = Math.max(0, state.team.length - 1) * 0.35;
+  const threatBonus = state.threat * 0.35;
+  const eliteBonus = elite ? 1.25 : 0;
+  return Math.max(1, state.stage * 0.72 + partyBonus + threatBonus + eliteBonus);
+}
+
+function enemyCount(elite = false) {
+  const base = state.stage <= 1 ? 1 : 1 + Math.floor((state.stage + 1) / 3);
+  const teamMatched = Math.min(base, Math.max(1, state.team.length));
+  return Math.min(5, teamMatched + (elite ? 1 : 0));
+}
+
+async function playBattle(elite = false, token = state.battleToken) {
   let round = 1;
-  const log = [...state.log];
 
-  while (living(allies).length && living(enemies).length && round < 30) {
-    const actors = [...living(allies).map((unit) => ({ unit, side: "ally" })), ...living(enemies).map((unit) => ({ unit, side: "enemy" }))]
-      .sort((a, b) => b.unit.spd - a.unit.spd || b.unit.atk - a.unit.atk);
+  while (token === state.battleToken && living(state.team).length && living(state.enemies).length && round < 30) {
+    pushLog(`Round ${round}`);
+    const actors = [...living(state.team).map((unit) => ({ id: unit.id, unit, side: "ally" })), ...living(state.enemies).map((unit) => ({ id: unit.id, unit, side: "enemy" }))]
+      .sort((a, b) => battleSpeed(b.unit) - battleSpeed(a.unit) || b.unit.atk - a.unit.atk);
 
-    log.push(`Round ${round}`);
     for (const actor of actors) {
-      if (actor.unit.hp <= 0) continue;
-      const targets = actor.side === "ally" ? living(enemies) : living(allies);
+      if (token !== state.battleToken) return;
+      const unit = getBattleUnit(actor.id);
+      if (!unit || unit.hp <= 0) continue;
+      const targets = actor.side === "ally" ? living(state.enemies) : living(state.team);
       if (!targets.length) break;
       const target = targets[0];
-      target.hp -= actor.unit.atk;
-      log.push(`${actor.unit.name} hits ${target.name} for ${actor.unit.atk}.`);
+
+      state.combat.activeId = unit.id;
+      state.combat.targetId = target.id;
+      state.combat.damage = "";
+      state.combat.banner = `${unit.name} prepares to strike ${target.name}.`;
+      render();
+      await wait(360);
+      if (token !== state.battleToken) return;
+
+      target.hp -= unit.atk;
+      state.combat.damage = `-${unit.atk}`;
+      state.combat.banner = `${unit.name} hits ${target.name} for ${unit.atk}.`;
+      pushLog(`${unit.name} hits ${target.name} for ${unit.atk}.`);
       if (target.hp <= 0) {
-        log.push(`${target.name} falls.`);
+        pushLog(`${target.name} falls.`);
       }
 
-      if (actor.unit.trait.includes("Backline") && targets.length > 1) {
+      if (unit.trait.includes("Backline") && targets.length > 1) {
         const back = targets[targets.length - 1];
         if (back !== target) {
           back.hp -= 1;
-          log.push(`${actor.unit.name} zaps ${back.name}.`);
+          pushLog(`${unit.name} zaps ${back.name}.`);
         }
       }
-      if (actor.unit.trait.includes("Brawler") && actor.unit.hp > 0) {
-        actor.unit.atk += 1;
+      if (unit.trait.includes("Brawler") && unit.hp > 0) {
+        unit.atk += 1;
+        pushLog(`${unit.name} brawls up to ${unit.atk} attack.`);
       }
+      render();
+      await wait(620);
     }
     round += 1;
   }
 
-  const won = living(allies).length > 0;
-  state.enemies = enemies;
-  state.team.forEach((unit) => {
-    const after = allies.find((ally) => ally.id === unit.id);
-    unit.hp = Math.max(1, after ? after.hp : 1);
-  });
+  if (token !== state.battleToken) return;
+  finishBattle(living(state.team).length > 0, elite);
+}
 
+function finishBattle(won, elite = false) {
+  state.combat.activeId = null;
+  state.combat.targetId = null;
+  state.combat.damage = "";
+  state.combat.locked = false;
   if (won) {
     const bonusCoins = state.team.filter((unit) => unit.trait.includes("Lucky")).length;
     const coins = 5 + state.stage + (elite ? 6 : 0) + bonusCoins;
@@ -259,13 +345,16 @@ function resolveBattle(elite = false) {
     state.team.forEach((unit) => {
       if (unit.trait.includes("Medic")) healWeakest(3);
     });
-    log.push(`Victory. The squad pockets ${coins} coins.`);
-    state.log = log.slice(-18);
+    state.combat.banner = `Victory. Choose one recruit or take coins.`;
+    pushLog(`Victory. The squad pockets ${coins} coins.`);
     openRewards(elite ? 7 : 0);
   } else {
-    log.push("Defeat. Lordoran retreats, bruised but indignant.");
-    state.log = log.slice(-18);
+    state.combat.banner = "Defeat. Lordoran retreats and the route map reshuffles.";
+    pushLog("Defeat. Lordoran retreats, bruised but indignant.");
     state.coins = Math.max(0, state.coins - 4);
+    state.team.forEach((unit) => {
+      unit.hp = Math.max(1, unit.hp);
+    });
     healTeam(false);
     state.phase = "route";
     generateRoutes();
@@ -277,6 +366,22 @@ function living(units) {
   return units.filter((unit) => unit.hp > 0);
 }
 
+function getBattleUnit(id) {
+  return state.team.find((unit) => unit.id === id) || state.enemies.find((unit) => unit.id === id);
+}
+
+function battleSpeed(unit) {
+  return unit.spd;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function pushLog(message) {
+  state.log = [message, ...state.log].slice(0, 20);
+}
+
 function healWeakest(amount) {
   const target = [...state.team].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
   if (target) target.hp = Math.min(target.maxHp, target.hp + amount);
@@ -284,6 +389,7 @@ function healWeakest(amount) {
 
 function openRewards(bonus = 0) {
   state.phase = "reward";
+  state.lastRewardBonus = bonus;
   healTeam(false);
   state.rewards = Array.from({ length: 3 }, () => makeHero(state.stage, bonus));
 }
@@ -324,6 +430,8 @@ function continueRun() {
   state.phase = "route";
   state.rewards = [];
   state.shop = [];
+  state.enemies = [];
+  state.combat.banner = `Stage ${state.stage}: choose the next branch.`;
   healTeam(true);
   generateRoutes();
   render();
@@ -336,6 +444,7 @@ function openShop() {
     { id: "buff", title: "Polished Button", detail: "Give a random ally +2 attack and +2 HP.", cost: 8, action: buffRandom },
     { id: "hire", title: "Stray Contract", detail: "Add a recruit rolled at shop odds.", cost: 10, action: hireFromShop }
   ];
+  state.combat.banner = "A shop opens between routes.";
   state.log = [`A market appears between branches.`];
   render();
 }
@@ -372,6 +481,8 @@ function leaveShop() {
   state.stage += 1;
   state.phase = "route";
   state.shop = [];
+  state.enemies = [];
+  state.combat.banner = `Stage ${state.stage}: choose the next branch.`;
   generateRoutes();
   render();
 }
@@ -383,12 +494,15 @@ function runMystery() {
     state.coins += coins;
     state.stage += 1;
     state.phase = "route";
+    state.enemies = [];
+    state.combat.banner = `The odd door pays out. Stage ${state.stage} awaits.`;
     generateRoutes();
     state.log = [`Lordoran found a jingling shrine. +${coins} coins.`];
     render();
     return;
   }
   if (roll < 0.68) {
+    state.combat.banner = "A wanderer offers to join the team.";
     state.log = ["A soft bell calls a wanderer to the party."];
     openRewards(4);
     render();
@@ -399,7 +513,7 @@ function runMystery() {
 }
 
 function addLog(message) {
-  state.log = [message, ...state.log].slice(0, 18);
+  pushLog(message);
 }
 
 function clearChoices() {
@@ -411,6 +525,7 @@ function render() {
   els.coinText.textContent = state.coins;
   els.threatText.textContent = state.threat;
   els.teamCount.textContent = `${state.team.length}/5`;
+  els.battleBanner.textContent = state.combat.banner;
   renderTeam();
   renderBoard();
   renderPhase();
@@ -457,28 +572,60 @@ function renderPhase() {
 
   if (state.phase === "route") {
     els.phaseTitle.textContent = "Choose a Route";
+    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Choose one of four forward branches; shops and events are rare special nodes.`;
+    renderOdds(0);
     renderRoutes();
   } else if (state.phase === "reward") {
     els.phaseTitle.textContent = "Recruit Reward";
+    els.phaseStatus.textContent = state.team.length >= 5
+      ? "Your team is full. Sell a member from the Team panel or take coins."
+      : "Choose one of three recruits, or take coins and keep the current squad.";
+    renderOdds(state.lastRewardBonus);
     renderRewards();
   } else if (state.phase === "shop") {
     els.phaseTitle.textContent = "Pocket Market";
+    els.phaseStatus.textContent = `Spend coins before moving to the next branch. Team size remains capped at 5.`;
+    renderOdds(4);
     renderShop();
   } else {
     els.phaseTitle.textContent = "Auto Battle";
+    els.phaseStatus.textContent = "The board is resolving one attack at a time.";
+    renderOdds(0);
   }
+}
+
+function renderOdds(bonus = 0) {
+  els.oddsBar.innerHTML = "";
+  rarityOdds(state.stage, bonus).forEach((entry) => {
+    const chip = document.createElement("div");
+    chip.className = `odds-chip ${entry.rarity}`;
+    chip.innerHTML = `<span>${rarityData[entry.rarity].label}</span><strong>${entry.chance.toFixed(1)}%</strong>`;
+    els.oddsBar.append(chip);
+  });
 }
 
 function renderRoutes() {
   els.routeChoices.innerHTML = "";
+  els.routeChoices.className = "route-grid map-view";
+  const current = document.createElement("div");
+  current.className = "map-current";
+  const trail = state.pathHistory.length
+    ? state.pathHistory.map((route) => route.label).join(" -> ")
+    : "Run start";
+  current.innerHTML = `<span>Current Node</span><strong>${state.currentNode}</strong><p>Stage ${state.stage}</p><div class="map-trail">${trail}</div>`;
+  const branches = document.createElement("div");
+  branches.className = "map-branches";
+
   state.routes.forEach((route) => {
     const button = document.createElement("button");
-    button.className = `route-card ${route.type}`;
+    button.className = `route-card map-node ${route.type}`;
     button.type = "button";
-    button.innerHTML = `<span class="route-kind">${route.label}</span><strong>${route.title}</strong><p>${route.detail}</p>`;
+    button.innerHTML = `<span class="lane-label">${route.lane}</span><span class="route-kind">${route.label}</span><strong>${route.title}</strong><p>${route.detail}</p><div class="route-meta"><span>${route.danger} danger</span><span>${route.coins} coins</span><span>${route.odds} odds</span></div>`;
     button.addEventListener("click", () => startRoute(route));
-    els.routeChoices.append(button);
+    branches.append(button);
   });
+
+  els.routeChoices.append(current, branches);
 }
 
 function renderRewards() {
@@ -552,7 +699,7 @@ function makeUnitCard(unit) {
 
 function makeFighter(unit) {
   const token = document.createElement("article");
-  token.className = `fighter-token ${unit.hp <= 0 ? "defeated" : ""}`;
+  token.className = `fighter-token ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""}`;
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 96;
@@ -568,6 +715,12 @@ function makeFighter(unit) {
   stats.className = "token-stats";
   stats.textContent = `HP ${Math.max(0, unit.hp)}  ATK ${unit.atk}`;
   token.append(canvas, name, hpbar, stats);
+  if (state.combat.targetId === unit.id && state.combat.damage) {
+    const damage = document.createElement("div");
+    damage.className = "damage-pop";
+    damage.textContent = state.combat.damage;
+    token.append(damage);
+  }
   return token;
 }
 
@@ -641,32 +794,48 @@ function drawLordoran(canvas) {
     ctx.fillRect(Math.round(x * scale), Math.round(y * scale), Math.round(w * scale), Math.round(h * scale));
   }
 
-  px(5, 2, 2, 3, "#f08c62");
-  px(10, 2, 2, 3, "#f08c62");
-  px(4, 4, 9, 8, "#f6a96c");
-  px(3, 7, 11, 6, "#f6a96c");
-  px(5, 6, 2, 1, "#11151d");
-  px(10, 6, 2, 1, "#11151d");
-  px(8, 7, 1, 1, "#dc6f6f");
-  px(7, 8, 3, 1, "#f6f2e8");
-  px(6, 10, 5, 2, "#f9c58f");
-  px(2, 9, 2, 2, "#f08c62");
-  px(13, 9, 2, 2, "#f08c62");
-  px(5, 13, 2, 1, "#47312a");
-  px(10, 13, 2, 1, "#47312a");
-  px(4, 5, 1, 1, "#f6f2e8");
-  px(12, 5, 1, 1, "#f6f2e8");
+  px(4, 2, 3, 3, "#222833");
+  px(10, 2, 3, 3, "#222833");
+  px(5, 3, 1, 1, "#f6c7d7");
+  px(11, 3, 1, 1, "#f6c7d7");
+  px(3, 5, 11, 7, "#222833");
+  px(2, 8, 13, 5, "#222833");
+  px(3, 4, 11, 1, "#f6f2e8");
+  px(5, 5, 7, 6, "#f6f2e8");
+  px(4, 9, 9, 4, "#f6f2e8");
+  px(5, 6, 2, 1, "#0d1016");
+  px(10, 6, 2, 1, "#0d1016");
+  px(8, 7, 1, 1, "#f2a0b7");
+  px(7, 8, 3, 1, "#0d1016");
+  px(6, 10, 5, 2, "#ffffff");
+  px(2, 9, 2, 2, "#f6f2e8");
+  px(13, 9, 2, 2, "#f6f2e8");
+  px(4, 13, 3, 1, "#0d1016");
+  px(10, 13, 3, 1, "#0d1016");
+  px(3, 7, 1, 1, "#ffffff");
+  px(13, 7, 1, 1, "#ffffff");
 }
 
 function newRun() {
+  state.battleToken += 1;
   state.stage = 1;
   state.coins = 10;
   state.threat = 1;
   state.phase = "route";
   state.team = [makeLordoran()];
   state.enemies = [];
+  state.pathHistory = [];
+  state.currentNode = "Camp";
   state.rewards = [];
   state.shop = [];
+  state.combat = {
+    activeId: null,
+    targetId: null,
+    damage: "",
+    banner: "Pick a branch to begin the next fight.",
+    locked: false
+  };
+  state.lastRewardBonus = 0;
   state.log = ["Lordoran begins the branchbound march."];
   generateRoutes();
   render();

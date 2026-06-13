@@ -4,8 +4,8 @@ A browser based roguelike auto-battler prototype starring Lordoran, a large cart
 
 ## Features
 
-- Super Auto Pets-style automatic battles.
-- FTL-style branching route choices with fights, elite zones, shops, and events.
+- Super Auto Pets-style automatic battles with visible attack-by-attack resolution.
+- FTL-style forward map choices with four branches per stage, where shops and events are rarer special nodes.
 - Five-member party limit with selling between stages.
 - Coins, shops, healing, buffs, and recruit rewards.
 - Rarity rolls that improve as the run advances:

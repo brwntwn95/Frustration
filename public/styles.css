@@ -290,12 +290,28 @@ h1 {
 }
 
 .battlefield {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 74px 1fr;
   gap: 12px;
-  min-height: 290px;
-  padding: 16px;
+  min-height: 330px;
+  padding: 54px 16px 16px;
   overflow: hidden;
+}
+
+.battle-banner {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  min-height: 28px;
+  padding: 7px 10px;
+  color: #12161d;
+  font-size: 0.92rem;
+  font-weight: 1000;
+  text-align: center;
+  background: var(--text);
+  border-radius: 6px;
 }
 
 .side {
@@ -324,6 +340,20 @@ h1 {
   background: #141821;
   border: 1px solid rgba(246, 242, 232, 0.09);
   border-radius: 8px;
+  transform: translateY(0);
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.fighter-token.active {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px rgba(114, 214, 139, 0.26), 0 14px 24px rgba(0, 0, 0, 0.25);
+  transform: translateY(-6px);
+}
+
+.fighter-token.target {
+  border-color: var(--red);
+  background: #241821;
+  animation: targetPulse 420ms ease;
 }
 
 .fighter-token.defeated {
@@ -368,6 +398,21 @@ h1 {
   font-weight: 900;
 }
 
+.damage-pop {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  min-width: 32px;
+  padding: 4px 6px;
+  color: #12161d;
+  font-size: 0.9rem;
+  font-weight: 1000;
+  text-align: center;
+  background: var(--red);
+  border-radius: 999px;
+  animation: damageRise 620ms ease both;
+}
+
 .versus {
   align-self: center;
   justify-self: center;
@@ -386,12 +431,84 @@ h1 {
   padding: 16px;
 }
 
+.phase-status {
+  min-height: 40px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  line-height: 1.35;
+  background: #11151d;
+  border: 1px solid rgba(246, 242, 232, 0.1);
+  border-radius: 8px;
+}
+
+.odds-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.odds-chip {
+  min-height: 54px;
+  padding: 8px;
+  color: #12161d;
+  background: var(--blue);
+  border-radius: 8px;
+}
+
+.odds-chip span {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.odds-chip strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 1rem;
+}
+
+.odds-chip.rare {
+  background: var(--purple);
+}
+
+.odds-chip.legendary {
+  background: var(--gold);
+}
+
+.odds-chip.eternal {
+  background: var(--teal);
+}
+
 .ghost-btn,
 .primary-btn,
 .route-card,
 .reward-card,
 .shop-card {
   transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.route-card {
+  display: grid;
+  align-content: start;
+}
+
+.route-card .route-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.route-card .route-meta span {
+  padding: 4px 7px;
+  color: #e9edf1;
+  font-size: 0.72rem;
+  font-weight: 900;
+  background: #2b313e;
+  border-radius: 6px;
 }
 
 .ghost-btn {
@@ -419,6 +536,124 @@ h1 {
   gap: 10px;
 }
 
+.route-grid.map-view {
+  grid-template-columns: minmax(170px, 220px) 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.map-current {
+  position: relative;
+  display: grid;
+  align-content: center;
+  min-height: 210px;
+  padding: 14px;
+  background: #10141c;
+  border: 2px solid var(--teal);
+  border-radius: 8px;
+}
+
+.map-current::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -20px;
+  width: 20px;
+  height: 3px;
+  background: rgba(246, 242, 232, 0.32);
+}
+
+.map-current span,
+.lane-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.map-current strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 1.35rem;
+}
+
+.map-current p {
+  margin-top: 6px;
+  color: var(--green);
+  font-weight: 1000;
+}
+
+.map-trail {
+  margin-top: 14px;
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  border-top: 1px solid rgba(246, 242, 232, 0.12);
+}
+
+.map-branches {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.map-branches::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  right: 50%;
+  top: 50%;
+  height: 3px;
+  background: rgba(246, 242, 232, 0.22);
+}
+
+.map-node {
+  position: relative;
+  min-height: 210px;
+}
+
+.map-node::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -11px;
+  width: 3px;
+  height: 11px;
+  background: rgba(246, 242, 232, 0.25);
+}
+
+.map-node::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 7px);
+  top: -19px;
+  width: 14px;
+  height: 14px;
+  background: var(--green);
+  border: 2px solid #10141c;
+  border-radius: 50%;
+}
+
+.map-node.elite::after {
+  background: var(--red);
+}
+
+.map-node.shop::after {
+  background: var(--gold);
+}
+
+.map-node.mystery::after {
+  background: var(--teal);
+}
+
+.lane-label {
+  display: block;
+  margin-bottom: 8px;
+}
+
 .route-card,
 .reward-card,
 .shop-card {
@@ -428,6 +663,10 @@ h1 {
   background: #141821;
   border: 1px solid rgba(246, 242, 232, 0.1);
   border-radius: 8px;
+}
+
+.route-card.map-node {
+  min-height: 210px;
 }
 
 .route-card strong,
@@ -510,6 +749,40 @@ h1 {
   border-radius: 5px;
 }
 
+@keyframes targetPulse {
+  0% {
+    transform: translateX(0);
+  }
+
+  35% {
+    transform: translateX(-5px);
+  }
+
+  70% {
+    transform: translateX(5px);
+  }
+
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes damageRise {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  15% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+}
+
 .is-hidden {
   display: none !important;
 }
@@ -525,6 +798,15 @@ h1 {
 
   .team-list {
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .map-branches {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .map-current::after,
+  .map-branches::before {
+    display: none;
   }
 }
 
@@ -545,9 +827,19 @@ h1 {
   .run-stats,
   .route-grid,
   .reward-grid,
-  .shop-panel {
+  .shop-panel,
+  .odds-bar {
     grid-template-columns: 1fr;
     width: 100%;
+  }
+
+  .route-grid.map-view,
+  .map-branches {
+    grid-template-columns: 1fr;
+  }
+
+  .route-card.map-node {
+    min-height: 176px;
   }
 
   .battlefield {
