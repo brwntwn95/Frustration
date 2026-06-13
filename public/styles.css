@@ -237,6 +237,10 @@ h1 {
   border-left-color: var(--gold);
 }
 
+.unit-card.mythic {
+  border-left-color: var(--red);
+}
+
 .unit-card.eternal {
   border-left-color: var(--teal);
 }
@@ -298,6 +302,11 @@ h1 {
 
 .legendary .rarity-pill {
   background: var(--gold);
+}
+
+.mythic .rarity-pill {
+  color: #f6f2e8;
+  background: var(--red);
 }
 
 .eternal .rarity-pill {
@@ -696,6 +705,11 @@ h1 {
 
 .odds-chip.legendary {
   background: var(--gold);
+}
+
+.odds-chip.mythic {
+  color: #f6f2e8;
+  background: var(--red);
 }
 
 .odds-chip.eternal {

@@ -1,9 +1,10 @@
-const appVersion = "v0.1.4";
+const appVersion = "v0.1.7";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
   rare: { label: "Rare", color: "#a46cff", value: 5, stat: 2 },
   legendary: { label: "Legendary", color: "#f1c44e", value: 9, stat: 4 },
+  mythic: { label: "Mythic", color: "#f06a6a", value: 12, stat: 5 },
   eternal: { label: "Eternal", color: "#b9fff4", value: 14, stat: 6 }
 };
 
@@ -38,7 +39,15 @@ const medicChargeCosts = {
   common: 4,
   rare: 3,
   legendary: 2,
+  mythic: 1,
   eternal: 1
+};
+
+const oddsUpgradeShift = {
+  eternal: 0.1,
+  mythic: 0.2,
+  legendary: 0.3,
+  rare: 0.4
 };
 
 const eternalHeroes = [
@@ -118,6 +127,8 @@ const state = {
   currentNodePosition: { laneIndex: 1.5, y: 1030 },
   rewards: [],
   shop: [],
+  buffPurchases: 0,
+  oddsUpgrades: 0,
   acquiredEternalKeys: [],
   log: [],
   combat: {
@@ -169,6 +180,7 @@ function makeLordoran() {
     rarity: "eternal",
     role: "lordoran",
     trait: roleById.lordoran.description,
+    level: 1,
     hp: 18,
     maxHp: 18,
     atk: 4,
@@ -194,12 +206,23 @@ function pick(list, rnd = Math.random) {
 
 function rarityOdds(stage, bonus = 0) {
   const lift = Math.min(18, stage * 1.35 + bonus);
-  const eternal = Math.min(0.35 + lift * 0.11, 4.5);
-  const legendary = Math.min(2.4 + lift * 0.42, 17);
-  const rare = Math.min(14 + lift * 0.86, 39);
-  const common = Math.max(100 - eternal - legendary - rare, 39);
+  const upgradeCount = state.oddsUpgrades || 0;
+  let eternal = Math.min(0.3 + lift * 0.09, 2.3) + upgradeCount * oddsUpgradeShift.eternal;
+  let mythic = Math.min(1.1 + lift * 0.26, 9) + upgradeCount * oddsUpgradeShift.mythic;
+  let legendary = Math.min(2.2 + lift * 0.38, 16) + upgradeCount * oddsUpgradeShift.legendary;
+  let rare = Math.min(14 + lift * 0.82, 38) + upgradeCount * oddsUpgradeShift.rare;
+  const highTotal = eternal + mythic + legendary + rare;
+  if (highTotal > 100) {
+    const scale = 100 / highTotal;
+    eternal *= scale;
+    mythic *= scale;
+    legendary *= scale;
+    rare *= scale;
+  }
+  const common = Math.max(100 - eternal - mythic - legendary - rare, 0);
   return [
     { rarity: "eternal", chance: eternal },
+    { rarity: "mythic", chance: mythic },
     { rarity: "legendary", chance: legendary },
     { rarity: "rare", chance: rare },
     { rarity: "common", chance: common }
@@ -223,27 +246,33 @@ function makeHero(stage = state.stage, bonus = 0, reservedEternals = new Set()) 
   if (rarity === "eternal") {
     const eternal = makeEternalHero(rnd, reservedEternals);
     if (eternal) return eternal;
-    rarity = "legendary";
+    rarity = "mythic";
   }
+  const level = recruitLevelForStage(stage);
   const stat = rarityData[rarity].stat;
   const speedBias = Math.floor(rnd() * 3);
   const role = pick(recruitRoles, rnd);
-  const maxHp = Math.max(3, 6 + stage + stat * 2 + role.hp + Math.floor(rnd() * 5));
+  const maxHp = Math.max(3, 6 + level * 2 + stat * 2 + role.hp + Math.floor(rnd() * 5));
   return {
     id: crypto.randomUUID(),
     name: pick(names, rnd),
     rarity,
     role: role.id,
     trait: role.description,
+    level,
     hp: maxHp,
     maxHp,
-    atk: Math.max(1, 2 + Math.floor(stage / 2) + stat + role.atk + Math.floor(rnd() * 3)),
-    spd: Math.max(0, 1 + speedBias + Math.floor(stat / 2) + role.spd),
+    atk: Math.max(1, 2 + Math.floor(level * 0.8) + stat + role.atk + Math.floor(rnd() * 3)),
+    spd: Math.max(0, 1 + speedBias + Math.floor(stat / 2) + role.spd + Math.floor(level / 5)),
     tankCharge: role.id === "tank" ? 0 : undefined,
     medicCharge: role.id === "medic" ? 0 : undefined,
     seed,
     type: "hero"
   };
+}
+
+function recruitLevelForStage(stage) {
+  return Math.max(1, stage);
 }
 
 function makeEternalHero(rnd = Math.random, reservedEternals = new Set()) {
@@ -259,6 +288,7 @@ function makeEternalHero(rnd = Math.random, reservedEternals = new Set()) {
     rarity: "eternal",
     role: preset.role,
     trait: preset.description,
+    level: 1,
     hp: preset.maxHp,
     maxHp: preset.maxHp,
     atk: preset.atk,
@@ -289,12 +319,14 @@ function makeEnemy(difficulty, elite = false) {
   const rnd = mulberry32(seed);
   const boost = elite ? Math.max(1, Math.floor(difficulty * 0.32)) : 0;
   const hp = Math.round(4 + difficulty * 1.25 + boost * 1.4 + Math.floor(rnd() * (2 + difficulty * 0.65)));
+  const level = Math.max(1, Math.round(difficulty));
   return {
     id: crypto.randomUUID(),
     name: pick(enemyNames, rnd),
     rarity: elite ? "rare" : "common",
     role: "enemy",
     trait: elite ? "Elite pressure." : "Stage threat.",
+    level,
     hp,
     maxHp: hp,
     atk: 1 + Math.floor(difficulty * 0.45) + boost + Math.floor(rnd() * 2),
@@ -436,6 +468,8 @@ function resetRunState(options = {}) {
   state.currentNodePosition = { laneIndex: 1.5, y: 1030 };
   state.rewards = [];
   state.shop = [];
+  state.buffPurchases = 0;
+  state.oddsUpgrades = 0;
   state.acquiredEternalKeys = [];
   state.combat = {
     activeId: null,
@@ -672,6 +706,7 @@ function finishBattle(won, elite = false) {
     state.levelsCleared += 1;
     updateCurrentScore();
     state.threat += elite ? 1 : 0.5;
+    state.team[0].level += 1;
     state.team[0].maxHp += 1;
     state.team[0].hp = state.team[0].maxHp;
     state.team[0].atk += state.stage % 2 === 0 ? 1 : 0;
@@ -979,14 +1014,27 @@ function continueRun() {
 
 function openShop() {
   state.phase = "shop";
-  state.shop = [
-    { id: "heal", title: "Warm Saucer", detail: "Heal the full team.", cost: 5, action: () => healTeam(true) },
-    { id: "buff", title: "Polished Button", detail: "Give a random ally +2 attack and +2 HP.", cost: 8, action: buffRandom },
-    { id: "hire", title: "Stray Contract", detail: "Add a recruit rolled at shop odds.", cost: 10, action: hireFromShop }
-  ];
+  state.shop = makeShopItems();
   state.combat.banner = "A shop opens between routes.";
   state.log = [`A market appears between branches.`];
   render();
+}
+
+function makeShopItems() {
+  return [
+    { id: "heal", title: "Warm Saucer", detail: "Heal the full team.", cost: 5, action: () => healTeam(true) },
+    { id: "buff", title: "Polished Button", detail: `Give a random ally +2 power and +2 HP. Price rises after each buy. Bought ${state.buffPurchases} times.`, cost: buffCost(), action: buffRandom },
+    { id: "odds", title: "Loaded Dice", detail: `Upgrade recruit odds: +0.1% Eternal, +0.2% Mythic, +0.3% Legendary, +0.4% Rare. Bought ${state.oddsUpgrades} times.`, cost: oddsUpgradeCost(), action: upgradeRarityOdds },
+    { id: "hire", title: "Stray Contract", detail: "Add a recruit rolled at shop odds.", cost: 10, action: hireFromShop }
+  ];
+}
+
+function buffCost() {
+  return 8 + state.buffPurchases * 5;
+}
+
+function oddsUpgradeCost() {
+  return 12 + state.oddsUpgrades * 8;
 }
 
 function buy(item) {
@@ -1000,6 +1048,7 @@ function buy(item) {
   }
   state.coins -= item.cost;
   item.action();
+  state.shop = makeShopItems();
   addLog(`${item.title} purchased.`);
   render();
 }
@@ -1009,6 +1058,11 @@ function buffRandom() {
   target.atk += 2;
   target.maxHp += 2;
   target.hp += 2;
+  state.buffPurchases += 1;
+}
+
+function upgradeRarityOdds() {
+  state.oddsUpgrades += 1;
 }
 
 function hireFromShop() {
@@ -1427,6 +1481,7 @@ function makeUnitCard(unit) {
   node.querySelector(".hp").textContent = `HP ${Math.max(0, unit.hp)}/${unit.maxHp}`;
   node.querySelector(".atk").textContent = powerStatText(unit);
   node.querySelector(".spd").textContent = `SPD ${unit.spd}`;
+  node.querySelector(".lvl").textContent = levelStatText(unit);
   drawSprite(node.querySelector("canvas"), unit);
   return node;
 }
@@ -1451,7 +1506,7 @@ function makeFighter(unit) {
   hpbar.append(fill);
   const stats = document.createElement("div");
   stats.className = "token-stats";
-  stats.textContent = `HP ${Math.max(0, unit.hp)}  ${powerStatText(unit)}`;
+  stats.textContent = `HP ${Math.max(0, unit.hp)}  ${powerStatText(unit)}  ${levelStatText(unit)}`;
   token.append(canvas, roleBadge, name, hpbar, stats);
   if (unitHasRole(unit, "tank") || unitHasRole(unit, "medic")) token.append(makeAbilityChargeMeter(unit));
   if (combatEffect) {
@@ -1467,6 +1522,10 @@ function powerStatText(unit) {
   return unitHasRole(unit, "medic")
     ? `HEAL ${medicHealPower(unit)}`
     : `ATK ${unit.atk}`;
+}
+
+function levelStatText(unit) {
+  return `LV ${unit.level || 1}`;
 }
 
 function makeAbilityChargeMeter(unit) {
