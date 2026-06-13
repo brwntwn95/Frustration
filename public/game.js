@@ -1,4 +1,4 @@
-const appVersion = "v0.1.23";
+const appVersion = "v0.1.24";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -162,7 +162,7 @@ const state = {
   routes: [],
   mapColumns: [],
   pastMapColumns: [],
-  mapPan: { x: 0, y: -780 },
+  mapPan: { x: 0, y: -650 },
   mapDragMoved: false,
   pathHistory: [],
   currentNode: "Camp",
@@ -582,9 +582,10 @@ function mapXForLane(laneIndex, offset = 0) {
 
 function mapPanForCurrent() {
   const currentX = mapXForLane(state.currentNodePosition.laneIndex);
+  const nextRowY = state.currentNodePosition.y - 130;
   return {
     x: Math.max(-160, Math.min(160, 380 - currentX)),
-    y: Math.max(-900, Math.min(-560, 170 - state.currentNodePosition.y))
+    y: Math.max(-920, Math.min(-500, 250 - nextRowY))
   };
 }
 
@@ -690,7 +691,7 @@ function resetRunState(options = {}) {
   state.enemies = [];
   state.mapColumns = [];
   state.pastMapColumns = [];
-  state.mapPan = { x: 0, y: -780 };
+  state.mapPan = { x: 0, y: -650 };
   state.mapDragMoved = false;
   state.pathHistory = [];
   state.currentNode = "Camp";
@@ -1936,6 +1937,7 @@ function renderRoutes() {
     button.style.top = `${node.y}px`;
     button.setAttribute("aria-disabled", String(node.type === "current" || node.columnIndex !== 0 || node.historyState));
     button.innerHTML = `<span class="node-symbol">${routeIcon(node.type)}</span><span class="node-tooltip"><strong>${node.title}</strong><em>${node.label || rarityData[node.rarity]?.label || ""}</em>${node.detail}<small>${node.danger || "current"} / ${node.coins || "run"} / ${node.odds || "base"}</small></span>`;
+    button.addEventListener("pointermove", (event) => positionNodeTooltip(button, event));
     if (node.columnIndex === 0) {
       button.addEventListener("pointerdown", (event) => event.stopPropagation());
       button.addEventListener("click", () => {
@@ -1953,6 +1955,12 @@ function renderRoutes() {
   const nextCount = state.routes.length;
   caption.textContent = `${nextCount} reachable branches. Drag the map to inspect the seed ahead and the branches left behind. Hover nodes for details.`;
   els.routeChoices.append(viewport, caption);
+}
+
+function positionNodeTooltip(button, event) {
+  const rect = button.getBoundingClientRect();
+  button.style.setProperty("--tooltip-left", `${event.clientX - rect.left + 18}px`);
+  button.style.setProperty("--tooltip-top", `${event.clientY - rect.top}px`);
 }
 
 function routeIcon(type) {
@@ -2023,7 +2031,7 @@ function setupMapPan(viewport, plane) {
     const dy = event.clientY - startY;
     if (Math.abs(dx) + Math.abs(dy) > 4) state.mapDragMoved = true;
     state.mapPan.x = Math.max(-160, Math.min(160, baseX + dx));
-    state.mapPan.y = Math.max(-900, Math.min(-560, baseY + dy));
+    state.mapPan.y = Math.max(-920, Math.min(-500, baseY + dy));
     plane.style.transform = `translate(${state.mapPan.x}px, ${state.mapPan.y}px)`;
   });
   const endDrag = (event) => {

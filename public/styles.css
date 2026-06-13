@@ -1481,11 +1481,13 @@ h1 {
 
 .node-tooltip {
   position: absolute;
-  left: 50%;
-  bottom: calc(100% + 13px);
+  left: var(--tooltip-left, calc(100% + 14px));
+  top: var(--tooltip-top, 50%);
   z-index: 40;
   display: none;
-  width: 230px;
+  width: 246px;
+  max-height: 170px;
+  overflow: hidden;
   padding: 9px 10px;
   color: var(--text);
   font-size: 0.78rem;
@@ -1496,7 +1498,8 @@ h1 {
   border: 1px solid rgba(114, 214, 139, 0.7);
   border-radius: 6px;
   box-shadow: 0 0 18px rgba(114, 214, 139, 0.28);
-  transform: translateX(-50%);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .node-tooltip strong,
