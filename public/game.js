@@ -1,4 +1,4 @@
-const appVersion = "v0.1.13";
+const appVersion = "v0.1.14";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -12,23 +12,30 @@ const names = [
   "Moss Templar", "Pickle Squire", "Button Witch", "Fog Drummer", "Glass Knight",
   "Juniper Monk", "Tiny Count", "Cinder Courier", "Marble Imp", "Turnip Bard",
   "Velvet Sneak", "Puddle Oracle", "Quartz Cook", "Gumdrop Guard", "Mirth Miner",
-  "Copper Jester", "Saffron Smith", "Moonlit Clerk", "Brisk Herald", "Lantern Duke"
+  "Copper Jester", "Saffron Smith", "Moonlit Clerk", "Brisk Herald", "Lantern Duke",
+  "Biscuit Marauder", "Nettle Page", "Waffle Savant", "Cobalt Barber", "Thimble Rogue",
+  "Pepper Herald", "Drowsy Paladin", "Ribbon Alchemist", "Marmalade Squire", "Tin Can Diva",
+  "Sprout Corsair", "Velcro Mystic", "Candle Boxer", "Fiddle Surgeon", "Acorn Duelist",
+  "Pancake Oracle", "Gingham Knight", "Chuckle Monk", "Buttonhook Vandal", "Cloudy Fencer"
 ];
 
 const enemyNames = [
   "Cracked Helm", "Bog Nipper", "Spite Lantern", "Hungry Barrel", "Ash Goblet",
-  "Bristle Mite", "Oathless Pawn", "Moldy Banner", "Tin Warden", "Crooked Mask"
+  "Bristle Mite", "Oathless Pawn", "Moldy Banner", "Tin Warden", "Crooked Mask",
+  "Rust Snatcher", "Grub Marshal", "Splinter Baron", "Graveyard Kettle", "Sour Banneret",
+  "Creaking Imp", "Mud Chapel", "Wickjaw Raider", "Brass Thief", "Ragged Bell",
+  "Gutter Crown", "Tallow Brute", "Fang Lantern", "Rattle Clerk", "Blackcap Heckler"
 ];
 
 const classRoles = [
-  { id: "scout", label: "Scout", color: "#7bdff2", hp: 0, atk: 0, spd: 3, description: "Acts early in every clash." },
+  { id: "scout", label: "Scout", color: "#7bdff2", hp: 0, atk: 0, spd: 3, description: "Acts early. Timed ability guarantees a critical hit for 30% extra damage." },
   { id: "tank", label: "Tank", color: "#4aa3ff", hp: 7, atk: -1, spd: -1, description: "Bulky defender. Gains guard charge when attacked, then taunts enemies when full." },
   { id: "snack", label: "Snack Pact", color: "#ffb26b", hp: 1, atk: 0, spd: 0, description: "Feeds Lordoran when hired, giving him +1 attack." },
-  { id: "backliner", label: "Backliner", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. After attacking, backstabs the farthest enemy for 1 extra damage." },
+  { id: "backliner", label: "Backliner", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. Timed ability hits the target, then all other enemies for 20% damage." },
   { id: "collector", label: "Collector", color: "#f1c44e", hp: 0, atk: 0, spd: 0, description: "Adds 1 coin when hired and improves post-fight coin rewards." },
   { id: "medic", label: "Medic", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals another ally instead of attacking, splashing healing back to themself. Charge gets faster at higher rarities." },
-  { id: "brawler", label: "Brawler", color: "#f06a6a", hp: 2, atk: 1, spd: -1, description: "Bruiser role. Gains +1 attack after landing a hit." },
-  { id: "lordoran", label: "Lordoran", color: "#b9fff4", hp: 0, atk: 0, spd: 0, description: "Main character: cannot be sold and grows rounder with every win." },
+  { id: "brawler", label: "Brawler", color: "#f06a6a", hp: 2, atk: 1, spd: -1, description: "Bruiser role. Timed ability permanently gains +1 attack." },
+  { id: "lordoran", label: "Lordoran", color: "#b9fff4", hp: 0, atk: 0, spd: 0, description: "Main character. Girth charges every 6 turns, splashing and stunning all enemies." },
   { id: "enemy", label: "Enemy", color: "#f06a6a", hp: 0, atk: 0, spd: 0, description: "Hostile unit on the branch." }
 ];
 
@@ -42,6 +49,8 @@ const medicChargeCosts = {
   mythic: 1,
   eternal: 1
 };
+const timedAbilityRoles = new Set(["brawler", "backliner", "scout", "lordoran"]);
+const lordoranGirthChargeMax = 6;
 
 const oddsUpgradeShift = {
   eternal: 0.1,
@@ -207,6 +216,7 @@ function makeLordoran() {
     maxHp: 18,
     atk: 4,
     spd: 2,
+    abilityCharge: 0,
     seed: 777,
     type: "lordoran",
     locked: true
@@ -319,6 +329,7 @@ function makeHero(stage = state.stage, bonus = 0, reservedEternals = new Set()) 
     spd: Math.max(0, 1 + speedBias + Math.floor(stat / 2) + role.spd + Math.floor(level / 5)),
     tankCharge: role.id === "tank" ? 0 : undefined,
     medicCharge: role.id === "medic" ? 0 : undefined,
+    abilityCharge: timedAbilityRoles.has(role.id) ? 0 : undefined,
     seed,
     type: "hero"
   };
@@ -349,6 +360,7 @@ function makeEternalHero(rnd = Math.random, reservedEternals = new Set()) {
     spd: stats.spd,
     tankCharge: preset.role === "tank" ? 0 : undefined,
     medicCharge: preset.role === "medic" ? 0 : undefined,
+    abilityCharge: timedAbilityRoles.has(preset.role) ? 0 : undefined,
     stunnedTurns: 0,
     seed: preset.seed,
     type: "hero"
@@ -450,6 +462,16 @@ function generateRoutes() {
 }
 
 function makeMapColumn(depth) {
+  if (depth > 1 && depth % 5 === 0) {
+    const route = randomRouteTemplate("shop");
+    return [{
+      ...route,
+      id: crypto.randomUUID(),
+      lane: "Upper Fork",
+      laneIndex: 1.5,
+      depth
+    }];
+  }
   const count = 2 + Math.floor(Math.random() * 3);
   const lanes = [...laneNames].sort(() => Math.random() - 0.5).slice(0, count).sort((a, b) => laneNames.indexOf(a) - laneNames.indexOf(b));
   const specialType = rollSpecialRoute(depth);
@@ -505,10 +527,8 @@ function encounterLabel(type) {
 
 function rollSpecialRoute(depth = state.stage) {
   const roll = Math.random();
-  const shopChance = depth <= 2 ? 0.04 : 0.1;
   const eventChance = depth <= 2 ? 0.04 : 0.09;
-  if (roll < shopChance) return "shop";
-  if (roll < shopChance + eventChance) return "mystery";
+  if (roll < eventChance) return "mystery";
   return null;
 }
 
@@ -677,6 +697,20 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       if (token !== state.battleToken) return;
       const unit = getBattleUnit(actor.id);
       if (!unit || unit.hp <= 0) continue;
+      if (unit.stunTurns > 0) {
+        unit.stunTurns -= 1;
+        state.combat.activeId = unit.id;
+        state.combat.targetId = unit.id;
+        state.combat.damage = "";
+        state.combat.effects = [{ id: unit.id, text: "STUN", kind: "ability" }];
+        state.combat.speech = null;
+        state.combat.banner = `${unit.name} is stunned and loses their turn.`;
+        pushLog(`${unit.name} is stunned.`);
+        playSound("ability", "tank");
+        render();
+        await wait(780);
+        continue;
+      }
       if (actor.side === "ally" && !await resolveEternalTurnStart(unit, token)) continue;
 
       if (actor.side === "ally" && unitHasRole(unit, "medic")) {
@@ -710,7 +744,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
             state.combat.banner = `${unit.name} heals ${healScope} for ${total} total HP.`;
             pushLog(`${unit.name} heals ${healScope} for ${total} total HP.`);
             render();
-            await resolveJamieOutburst(unit, token);
+            await resolveJamieOutburst(unit, token, total);
             await wait(700);
             continue;
           }
@@ -747,7 +781,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
           state.combat.banner = `${unit.name} heals ${healTarget.name} for ${amount}${selfAmount > 0 ? ` and themself for ${selfAmount}` : ""}.`;
           pushLog(`${unit.name} heals ${healTarget.name} for ${amount}${selfAmount > 0 ? ` and themself for ${selfAmount}` : ""}.`);
           render();
-          await resolveJamieOutburst(unit, token);
+          await resolveJamieOutburst(unit, token, amount + selfAmount);
           await wait(620);
           continue;
         }
@@ -759,7 +793,17 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         if (taunter && taunter.hp > 0) targets = [taunter];
       }
       if (!targets.length) break;
-      const target = pick(targets);
+      let target = pick(targets);
+
+      const timedAbility = actor.side === "ally"
+        ? await resolveTimedAttackAbility(unit, target, targets, token)
+        : { damageMultiplier: 1, splashMultiplier: 0 };
+      if (!timedAbility) return;
+      if (actor.side === "ally") {
+        targets = living(state.enemies);
+        if (!targets.length) break;
+        if (!targets.includes(target) || target.hp <= 0) target = pick(targets);
+      }
 
       state.combat.activeId = unit.id;
       state.combat.targetId = target.id;
@@ -772,12 +816,13 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       await wait(360);
       if (token !== state.battleToken) return;
 
-      target.hp -= unit.atk;
-      state.combat.damage = `-${unit.atk}`;
-      state.combat.effects = [{ id: target.id, text: `-${unit.atk}`, kind: "damage" }];
-      state.combat.banner = `${unit.name} hits ${target.name} for ${unit.atk}.`;
+      const attackDamage = Math.max(1, Math.round(unit.atk * (timedAbility.damageMultiplier || 1)));
+      target.hp -= attackDamage;
+      state.combat.damage = `-${attackDamage}`;
+      state.combat.effects = [{ id: target.id, text: `-${attackDamage}`, kind: "damage" }];
+      state.combat.banner = `${unit.name} hits ${target.name} for ${attackDamage}.`;
       playSound("hit", roleForUnit(unit).id);
-      pushLog(`${unit.name} hits ${target.name} for ${unit.atk}.`);
+      pushLog(`${unit.name} hits ${target.name} for ${attackDamage}.`);
       if (actor.side === "enemy" && unitHasRole(target, "tank")) {
         chargeTank(target);
       }
@@ -785,7 +830,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         pushLog(`${target.name} falls.`);
       }
       if (actor.side === "ally" && unit.eternalKey === "lucas" && Math.random() < 0.2) {
-        const recoil = Math.max(1, Math.ceil(unit.atk / 2));
+        const recoil = Math.max(1, Math.ceil(attackDamage / 2));
         unit.hp -= recoil;
         state.combat.effects.push({ id: unit.id, text: `-${recoil}`, kind: "damage" });
         showCombatSpeech(unit, "Check this shit out");
@@ -793,20 +838,17 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         if (unit.hp <= 0) pushLog("Lucas immediately regrets checking that out.");
       }
 
-      if (unitHasRole(unit, "backliner") && targets.length > 1) {
-        const back = targets[targets.length - 1];
-        if (back !== target) {
-          back.hp -= 1;
-          state.combat.effects.push({ id: back.id, text: "-1", kind: "damage" });
-          pushLog(`${unit.name} backstabs ${back.name} with a quick dagger flick.`);
-        }
-      }
-      if (unitHasRole(unit, "brawler") && unit.hp > 0) {
-        unit.atk += 1;
-        pushLog(`${unit.name} brawls up to ${unit.atk} attack.`);
+      if (timedAbility.splashMultiplier > 0) {
+        const splashDamage = Math.max(1, Math.round(unit.atk * timedAbility.splashMultiplier));
+        living(state.enemies).filter((enemy) => enemy.id !== target.id).forEach((enemy) => {
+          enemy.hp -= splashDamage;
+          state.combat.effects.push({ id: enemy.id, text: `-${splashDamage}`, kind: "damage" });
+          if (enemy.hp <= 0) pushLog(`${enemy.name} falls.`);
+        });
+        pushLog(`${unit.name} fans out dagger strikes for ${splashDamage} splash damage.`);
       }
       render();
-      await wait(620);
+      await wait(state.combat.speech ? 1020 : 620);
     }
     round += 1;
   }
@@ -848,6 +890,84 @@ function finishBattle(won, encounterType = "fight") {
 
 function living(units) {
   return units.filter((unit) => unit.hp > 0);
+}
+
+async function resolveTimedAttackAbility(unit, target, targets, token) {
+  const role = roleForUnit(unit).id;
+  const max = timedAbilityChargeMax(unit);
+  if (!max) return { damageMultiplier: 1, splashMultiplier: 0 };
+  unit.abilityCharge = Math.min(max, (unit.abilityCharge || 0) + 1);
+  if (unit.abilityCharge < max) return { damageMultiplier: 1, splashMultiplier: 0 };
+  unit.abilityCharge = 0;
+
+  state.combat.activeId = unit.id;
+  state.combat.targetId = target?.id || unit.id;
+  state.combat.damage = "";
+  state.combat.effects = [{ id: unit.id, text: "READY", kind: "ability" }];
+  state.combat.speech = null;
+
+  if (role === "brawler") {
+    unit.atk += 1;
+    state.combat.effects = [{ id: unit.id, text: "+1 ATK", kind: "ability" }];
+    state.combat.banner = `${unit.name} cashes in brawler charge and gains +1 attack.`;
+    pushLog(`${unit.name}'s brawler ability raises attack to ${unit.atk}.`);
+    playSound("ability", "brawler");
+    render();
+    await wait(720);
+    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0 } : null;
+  }
+
+  if (role === "scout") {
+    state.combat.effects = [{ id: target.id, text: "CRIT", kind: "ability" }];
+    state.combat.banner = `${unit.name} lines up a guaranteed critical strike.`;
+    pushLog(`${unit.name}'s scout ability guarantees a critical hit.`);
+    playSound("ability", "scout");
+    render();
+    await wait(620);
+    return token === state.battleToken ? { damageMultiplier: 1.3, splashMultiplier: 0 } : null;
+  }
+
+  if (role === "backliner") {
+    state.combat.effects = [{ id: target.id, text: "DAGGER", kind: "ability" }];
+    state.combat.banner = `${unit.name} readies a dagger chain through the enemy line.`;
+    pushLog(`${unit.name}'s assassin ability will splash through every enemy.`);
+    playSound("ability", "backliner");
+    render();
+    await wait(620);
+    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0.2 } : null;
+  }
+
+  if (role === "lordoran") {
+    const damage = Math.max(1, Math.round(unit.atk * 0.3));
+    const enemies = living(state.enemies);
+    enemies.forEach((enemy) => {
+      enemy.hp -= damage;
+      enemy.stunTurns = Math.max(enemy.stunTurns || 0, 1);
+    });
+    state.combat.targetId = unit.id;
+    state.combat.effects = enemies.map((enemy) => ({ id: enemy.id, text: `-${damage} STUN`, kind: "ability" }));
+    showCombatSpeech(unit, "GIRTH");
+    state.combat.banner = `${unit.name} uses Girth, splashing every enemy for ${damage} and stunning them.`;
+    pushLog(`${unit.name} uses Girth for ${damage} damage to all enemies and 1 turn of stun.`);
+    playSound("ability", "lordoran");
+    render();
+    await wait(1040);
+    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0 } : null;
+  }
+
+  return { damageMultiplier: 1, splashMultiplier: 0 };
+}
+
+function timedAbilityChargeMax(unit) {
+  const role = roleForUnit(unit).id;
+  if (role === "lordoran") return lordoranGirthChargeMax;
+  if (!timedAbilityRoles.has(role)) return 0;
+  return medicChargeCosts[unit.rarity] || medicChargeCosts.common;
+}
+
+function timedAbilityCharge(unit) {
+  const max = timedAbilityChargeMax(unit);
+  return max ? Math.max(0, Math.min(max, unit.abilityCharge || 0)) : 0;
 }
 
 async function triggerRoundStartAbilities(token) {
@@ -903,7 +1023,7 @@ async function resolveEternalTurnStart(unit, token) {
     pushLog(`${unit.name} sits this turn out.`);
     playSound("ability", roleForUnit(unit).id);
     render();
-    await wait(560);
+    await wait(1120);
     return false;
   }
 
@@ -918,7 +1038,7 @@ async function resolveEternalTurnStart(unit, token) {
     pushLog(`${unit.name} has wifely duties and sits out.`);
     playSound("ability", "tank");
     render();
-    await wait(720);
+    await wait(1240);
     return false;
   }
 
@@ -932,29 +1052,30 @@ async function resolveEternalTurnStart(unit, token) {
     pushLog(`${unit.name}: Uhhhhhhh`);
     playSound("ability", "brawler");
     render();
-    await wait(680);
+    await wait(1180);
     return false;
   }
 
   return true;
 }
 
-async function resolveJamieOutburst(unit, token) {
-  if (unit.eternalKey !== "jamie" || Math.random() >= 0.1) return;
+async function resolveJamieOutburst(unit, token, healingDone = 0) {
+  if (unit.eternalKey !== "jamie" || healingDone <= 0 || Math.random() >= 0.1) return;
   const targets = living(state.team).filter((ally) => ally.id !== unit.id && ally.eternalKey);
   if (!targets.length) return;
   const target = pick(targets);
-  target.hp -= 1;
+  const damage = Math.max(1, Math.ceil(healingDone * 0.5));
+  target.hp -= damage;
   state.combat.activeId = unit.id;
   state.combat.targetId = target.id;
   state.combat.damage = "";
-  state.combat.effects = [{ id: target.id, text: "fuck you", kind: "curse" }];
+  state.combat.effects = [{ id: target.id, text: `-${damage}`, kind: "curse" }];
   showCombatSpeech(unit, "fuck you");
-  state.combat.banner = `${unit.name} heals, then immediately yells at ${target.name}.`;
-  pushLog(`${unit.name} to ${target.name}: fuck you.`);
+  state.combat.banner = `${unit.name} converts bedside manner into ${damage} damage to ${target.name}.`;
+  pushLog(`${unit.name} to ${target.name}: fuck you. ${damage} damage.`);
   playSound("hit", "medic");
   render();
-  await wait(520);
+  await wait(1040);
   if (token !== state.battleToken) return;
   if (target.hp <= 0) pushLog(`${target.name} falls from emotional damage.`);
 }
@@ -1619,7 +1740,7 @@ function makeUnitCard(unit) {
   classSlot.textContent = "";
   classSlot.append(makeRoleBadge(role, "", unit.trait));
   if (unit.eternalKey) classSlot.append(makeEternalModifierBadge(unit.eternalKey));
-  if (unitHasRole(unit, "tank") || unitHasRole(unit, "medic")) classSlot.append(makeAbilityChargeMeter(unit));
+  if (abilityMeterMax(unit)) classSlot.append(makeAbilityChargeMeter(unit));
   node.querySelector(".hp").textContent = `HP ${Math.max(0, unit.hp)}/${unit.maxHp}`;
   node.querySelector(".atk").textContent = powerStatText(unit);
   node.querySelector(".spd").textContent = `SPD ${unit.spd}`;
@@ -1654,7 +1775,7 @@ function makeFighter(unit) {
   stats.className = "token-stats";
   stats.textContent = `HP ${Math.max(0, unit.hp)}  ${powerStatText(unit)}  ${levelStatText(unit)}`;
   token.append(canvas, badgeRow, name, hpbar, stats);
-  if (unitHasRole(unit, "tank") || unitHasRole(unit, "medic")) token.append(makeAbilityChargeMeter(unit));
+  if (abilityMeterMax(unit)) token.append(makeAbilityChargeMeter(unit));
   if (combatEffect) {
     const damage = document.createElement("div");
     damage.className = `damage-pop ${combatEffect.kind}-pop`;
@@ -1681,18 +1802,41 @@ function levelStatText(unit) {
 }
 
 function makeAbilityChargeMeter(unit) {
-  const isMedic = unitHasRole(unit, "medic");
-  const max = isMedic ? medicChargeMax(unit) : tankChargeMax;
-  const current = isMedic ? medicCharge(unit) : tankCharge(unit);
+  const role = roleForUnit(unit).id;
+  const max = abilityMeterMax(unit);
+  const current = abilityMeterCharge(unit);
   const meter = document.createElement("div");
-  meter.className = `ability-charge ${isMedic ? "medic-charge" : "tank-charge"}`;
-  meter.setAttribute("aria-label", `${isMedic ? "Team heal" : "Guard"} charge ${current} of ${max}`);
+  meter.className = `ability-charge ${role}-charge`;
+  meter.setAttribute("aria-label", `${abilityName(unit)} charge ${current} of ${max}`);
   for (let index = 0; index < max; index += 1) {
     const pip = document.createElement("span");
     if (index < current) pip.className = "filled";
     meter.append(pip);
   }
   return meter;
+}
+
+function abilityMeterMax(unit) {
+  if (unitHasRole(unit, "medic")) return medicChargeMax(unit);
+  if (unitHasRole(unit, "tank")) return tankChargeMax;
+  return timedAbilityChargeMax(unit);
+}
+
+function abilityMeterCharge(unit) {
+  if (unitHasRole(unit, "medic")) return medicCharge(unit);
+  if (unitHasRole(unit, "tank")) return tankCharge(unit);
+  return timedAbilityCharge(unit);
+}
+
+function abilityName(unit) {
+  const role = roleForUnit(unit).id;
+  if (role === "medic") return "Team heal";
+  if (role === "tank") return "Guard";
+  if (role === "brawler") return "Brawler";
+  if (role === "backliner") return "Dagger chain";
+  if (role === "scout") return "Critical strike";
+  if (role === "lordoran") return "Girth";
+  return "Ability";
 }
 
 function makeRoleBadge(role, size = "", description = role.description) {
@@ -1810,19 +1954,35 @@ function drawSprite(canvas, unit) {
   const dark = palette[2];
   const accent = palette[3];
   const hat = Math.floor(rnd() * 4);
-  const width = 5 + Math.floor(rnd() * 3);
+  const shape = Math.floor(rnd() * 5);
+  const accessory = Math.floor(rnd() * 6);
+  const width = 4 + Math.floor(rnd() * 5);
+  const height = 6 + Math.floor(rnd() * 3);
   const left = 8 - Math.floor(width / 2);
+  const headTop = shape === 1 ? 3 : 4;
+  const bodyTop = 6 + (shape === 2 ? 1 : 0);
+  const bodyHeight = Math.max(5, height);
+  const eyeColor = unit.type === "enemy" ? pick(["#ffef8f", "#ff8f8f", "#b9fff4"], rnd) : "#0d1016";
 
-  px(left, 6, width, 7, bodyColor);
-  px(left + 1, 4, width - 2, 3, trim);
-  px(left, 10, width, 3, dark);
+  px(left, bodyTop, width, bodyHeight, bodyColor);
+  if (shape === 0) px(left + 1, bodyTop + 2, width - 2, 2, trim);
+  if (shape === 1) px(left - 1, bodyTop + 1, width + 2, 3, bodyColor);
+  if (shape === 2) px(left + 1, bodyTop - 1, width - 2, bodyHeight + 1, bodyColor);
+  if (shape === 3) {
+    px(left - 1, bodyTop + 2, 1, bodyHeight - 1, dark);
+    px(left + width, bodyTop + 2, 1, bodyHeight - 1, dark);
+  }
+  if (shape === 4) px(left, bodyTop + bodyHeight - 2, width, 2, trim);
+
+  px(left + 1, headTop, Math.max(2, width - 2), 3, trim);
+  px(left, bodyTop + bodyHeight - 2, width, 2, dark);
   px(left - 1, 13, 2, 1, dark);
   px(left + width - 1, 13, 2, 1, dark);
-  px(left + 1, 7, 1, 1, "#0d1016");
-  px(left + width - 2, 7, 1, 1, "#0d1016");
-  px(left + Math.floor(width / 2), 8, 1, 1, accent);
-  px(left - 1, 8, 1, 3, trim);
-  px(left + width, 8, 1, 3, trim);
+  px(left + 1, headTop + 3, 1, 1, eyeColor);
+  px(left + width - 2, headTop + 3, 1, 1, eyeColor);
+  px(left + Math.floor(width / 2), headTop + 4, 1, 1, accent);
+  px(left - 1, bodyTop + 2, 1, 3, trim);
+  px(left + width, bodyTop + 2, 1, 3, trim);
 
   if (hat === 0) px(left + 1, 2, width - 2, 2, accent);
   if (hat === 1) px(left, 3, width, 1, accent);
@@ -1832,9 +1992,32 @@ function drawSprite(canvas, unit) {
   }
   if (hat === 3) px(left + Math.floor(width / 2), 2, 1, 2, accent);
 
+  if (accessory === 0) px(left - 2, bodyTop + 4, 1, 4, accent);
+  if (accessory === 1) px(left + width + 1, bodyTop + 2, 1, 5, "#dfe7ff");
+  if (accessory === 2) px(left - 2, bodyTop + 1, 2, 2, dark);
+  if (accessory === 3) px(left + width, bodyTop + 1, 2, 2, accent);
+  if (accessory === 4) px(left + 1, bodyTop + bodyHeight - 4, width - 2, 1, accent);
+  if (accessory === 5) px(left + Math.floor(width / 2), bodyTop - 1, 1, 1, "#f6f2e8");
+
+  if (unitHasRole(unit, "tank")) px(left - 2, bodyTop + 3, 3, 4, "#b9fff4");
+  if (unitHasRole(unit, "medic")) {
+    px(left + width, bodyTop + 1, 1, 5, "#f6f2e8");
+    px(left + width - 1, bodyTop + 3, 3, 1, "#72d68b");
+  }
+  if (unitHasRole(unit, "backliner")) {
+    px(left + width + 1, bodyTop + 3, 1, 4, "#dfe7ff");
+    px(left + width + 2, bodyTop + 2, 1, 2, "#f6f2e8");
+  }
+  if (unitHasRole(unit, "brawler")) {
+    px(left - 2, bodyTop + 4, 2, 2, "#f06a6a");
+    px(left + width, bodyTop + 4, 2, 2, "#f06a6a");
+  }
+  if (unitHasRole(unit, "scout")) px(left + width, bodyTop, 2, 1, "#7bdff2");
+
   if (unit.type === "enemy") {
-    px(left + 1, 7, 1, 1, "#ffef8f");
-    px(left + width - 2, 7, 1, 1, "#ffef8f");
+    px(left + 1, headTop + 3, 1, 1, eyeColor);
+    px(left + width - 2, headTop + 3, 1, 1, eyeColor);
+    if (accessory % 2 === 0) px(left + Math.floor(width / 2), bodyTop + bodyHeight - 1, 1, 1, "#ffef8f");
   }
 }
 
