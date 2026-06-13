@@ -1,4 +1,4 @@
-const appVersion = "v0.1.11";
+const appVersion = "v0.1.13";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -24,9 +24,9 @@ const classRoles = [
   { id: "scout", label: "Scout", color: "#7bdff2", hp: 0, atk: 0, spd: 3, description: "Acts early in every clash." },
   { id: "tank", label: "Tank", color: "#4aa3ff", hp: 7, atk: -1, spd: -1, description: "Bulky defender. Gains guard charge when attacked, then taunts enemies when full." },
   { id: "snack", label: "Snack Pact", color: "#ffb26b", hp: 1, atk: 0, spd: 0, description: "Feeds Lordoran when hired, giving him +1 attack." },
-  { id: "backliner", label: "Backliner", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. After attacking, clips the farthest enemy for 1 extra damage." },
+  { id: "backliner", label: "Backliner", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. After attacking, backstabs the farthest enemy for 1 extra damage." },
   { id: "collector", label: "Collector", color: "#f1c44e", hp: 0, atk: 0, spd: 0, description: "Adds 1 coin when hired and improves post-fight coin rewards." },
-  { id: "medic", label: "Medic", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals instead of attacking. Team heal charge gets faster at higher rarities." },
+  { id: "medic", label: "Medic", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals another ally instead of attacking, splashing healing back to themself. Charge gets faster at higher rarities." },
   { id: "brawler", label: "Brawler", color: "#f06a6a", hp: 2, atk: 1, spd: -1, description: "Bruiser role. Gains +1 attack after landing a hit." },
   { id: "lordoran", label: "Lordoran", color: "#b9fff4", hp: 0, atk: 0, spd: 0, description: "Main character: cannot be sold and grows rounder with every win." },
   { id: "enemy", label: "Enemy", color: "#f06a6a", hp: 0, atk: 0, spd: 0, description: "Hostile unit on the branch." }
@@ -108,7 +108,7 @@ const eternalModifiers = {
   },
   lucas: {
     title: "Check This Out",
-    detail: "After attacking, 20% chance to damage himself for half the damage he just dealt."
+    detail: "After a dagger attack, 20% chance to damage himself for half the damage he just dealt."
   }
 };
 
@@ -334,6 +334,7 @@ function makeEternalHero(rnd = Math.random, reservedEternals = new Set()) {
   const available = eternalHeroes.filter((hero) => !blocked.has(hero.key));
   if (!available.length) return null;
   const preset = pick(available, rnd);
+  const stats = eternalStatsForLevel(preset, recruitLevelForStage(state.stage));
   return {
     id: crypto.randomUUID(),
     eternalKey: preset.key,
@@ -341,17 +342,46 @@ function makeEternalHero(rnd = Math.random, reservedEternals = new Set()) {
     rarity: "eternal",
     role: preset.role,
     trait: preset.description,
-    level: 1,
-    hp: preset.maxHp,
-    maxHp: preset.maxHp,
-    atk: preset.atk,
-    spd: preset.spd,
+    level: stats.level,
+    hp: stats.maxHp,
+    maxHp: stats.maxHp,
+    atk: stats.atk,
+    spd: stats.spd,
     tankCharge: preset.role === "tank" ? 0 : undefined,
     medicCharge: preset.role === "medic" ? 0 : undefined,
     stunnedTurns: 0,
     seed: preset.seed,
     type: "hero"
   };
+}
+
+function eternalStatsForLevel(preset, level) {
+  const scaledLevel = Math.max(1, level);
+  const bonus = scaledLevel - 1;
+  return {
+    level: scaledLevel,
+    maxHp: preset.maxHp + bonus * 3,
+    atk: preset.atk + Math.floor(bonus * 0.9),
+    spd: preset.spd + Math.floor(bonus / 5)
+  };
+}
+
+function syncEternalLevels(stage = state.stage) {
+  state.team.forEach((unit) => syncEternalUnit(unit, stage));
+}
+
+function syncEternalUnit(unit, stage = state.stage) {
+  if (!unit?.eternalKey) return;
+  const level = recruitLevelForStage(stage);
+  const preset = eternalHeroes.find((hero) => hero.key === unit.eternalKey);
+  if (!preset || (unit.level || 1) >= level) return;
+  const previousMax = unit.maxHp;
+  const stats = eternalStatsForLevel(preset, level);
+  unit.level = stats.level;
+  unit.maxHp = stats.maxHp;
+  unit.atk = stats.atk;
+  unit.spd = stats.spd;
+  unit.hp = Math.min(unit.maxHp, Math.max(1, unit.hp) + Math.max(0, unit.maxHp - previousMax));
 }
 
 function ownedEternalKeys() {
@@ -652,18 +682,24 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       if (actor.side === "ally" && unitHasRole(unit, "medic")) {
         chargeMedic(unit);
         if (medicCharge(unit) >= medicChargeMax(unit)) {
-          const teamHeals = living(state.team)
+          const otherTeamHeals = living(state.team)
+            .filter((target) => target.id !== unit.id)
             .map((target) => ({ target, amount: medicHealAmount(target, unit) }))
             .filter((heal) => heal.amount > 0);
+          const selfAmount = otherTeamHeals.length ? medicHealAmount(unit, unit) : 0;
+          const teamHeals = selfAmount > 0
+            ? [...otherTeamHeals, { target: unit, amount: selfAmount }]
+            : otherTeamHeals;
           if (teamHeals.length) {
             unit.medicCharge = 0;
             const total = teamHeals.reduce((sum, heal) => sum + heal.amount, 0);
+            const healScope = selfAmount > 0 ? "allies and themself" : "allies";
             state.combat.activeId = unit.id;
             state.combat.targetId = unit.id;
             state.combat.damage = "";
             state.combat.effects = teamHeals.map((heal) => ({ id: heal.target.id, text: `+${heal.amount}`, kind: "heal" }));
             state.combat.speech = null;
-            state.combat.banner = `${unit.name} prepares a team heal for ${total} total HP.`;
+            state.combat.banner = `${unit.name} prepares a shared heal for ${total} total HP.`;
             playSound("heal", "medic");
             render();
             await wait(420);
@@ -671,27 +707,32 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
             teamHeals.forEach((heal) => {
               heal.target.hp = Math.min(heal.target.maxHp, heal.target.hp + heal.amount);
             });
-            state.combat.banner = `${unit.name} heals the whole team for ${total} total HP.`;
-            pushLog(`${unit.name} heals the whole team for ${total} total HP.`);
+            state.combat.banner = `${unit.name} heals ${healScope} for ${total} total HP.`;
+            pushLog(`${unit.name} heals ${healScope} for ${total} total HP.`);
             render();
             await resolveJamieOutburst(unit, token);
             await wait(700);
             continue;
           }
         }
-        const healTarget = weakestLivingAlly();
+        const healTarget = weakestOtherLivingAlly(unit);
         if (healTarget) {
           const amount = medicHealAmount(healTarget, unit);
+          const selfAmount = amount > 0 ? medicHealAmount(unit, unit) : 0;
+          const healEffects = amount > 0
+            ? [
+                { id: healTarget.id, text: `+${amount}`, kind: "heal" },
+                ...(selfAmount > 0 ? [{ id: unit.id, text: `+${selfAmount}`, kind: "heal" }] : [])
+              ]
+            : [{ id: unit.id, text: "READY", kind: "ability" }];
           state.combat.activeId = unit.id;
           state.combat.targetId = healTarget.id;
           state.combat.damage = "";
-          state.combat.effects = amount > 0
-            ? [{ id: healTarget.id, text: `+${amount}`, kind: "heal" }]
-            : [{ id: unit.id, text: "READY", kind: "ability" }];
+          state.combat.effects = healEffects;
           state.combat.speech = null;
           state.combat.banner = amount > 0
-            ? `${unit.name} prepares to heal ${healTarget.name} for ${amount}.`
-            : `${unit.name} holds a heal. Nobody needs patching up.`;
+            ? `${unit.name} prepares to heal ${healTarget.name} for ${amount}${selfAmount > 0 ? ` and themself for ${selfAmount}` : ""}.`
+            : `${unit.name} holds a heal. Everyone else is fine.`;
           playSound("heal", "medic");
           render();
           await wait(360);
@@ -701,9 +742,10 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
             continue;
           }
           healTarget.hp = Math.min(healTarget.maxHp, healTarget.hp + amount);
-          state.combat.effects = [{ id: healTarget.id, text: `+${amount}`, kind: "heal" }];
-          state.combat.banner = `${unit.name} heals ${healTarget.name} for ${amount}.`;
-          pushLog(`${unit.name} heals ${healTarget.name} for ${amount}.`);
+          if (selfAmount > 0) unit.hp = Math.min(unit.maxHp, unit.hp + selfAmount);
+          state.combat.effects = healEffects;
+          state.combat.banner = `${unit.name} heals ${healTarget.name} for ${amount}${selfAmount > 0 ? ` and themself for ${selfAmount}` : ""}.`;
+          pushLog(`${unit.name} heals ${healTarget.name} for ${amount}${selfAmount > 0 ? ` and themself for ${selfAmount}` : ""}.`);
           render();
           await resolveJamieOutburst(unit, token);
           await wait(620);
@@ -756,7 +798,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         if (back !== target) {
           back.hp -= 1;
           state.combat.effects.push({ id: back.id, text: "-1", kind: "damage" });
-          pushLog(`${unit.name} zaps ${back.name}.`);
+          pushLog(`${unit.name} backstabs ${back.name} with a quick dagger flick.`);
         }
       }
       if (unitHasRole(unit, "brawler") && unit.hp > 0) {
@@ -794,6 +836,7 @@ function finishBattle(won, encounterType = "fight") {
     state.team[0].maxHp += 1;
     state.team[0].hp = state.team[0].maxHp;
     state.team[0].atk += state.stage % 2 === 0 ? 1 : 0;
+    syncEternalLevels(state.stage);
     state.combat.banner = `Victory. Choose one recruit or take coins.`;
     pushLog(`Victory. The squad pockets ${coins} coins.`);
     openRewards(type === "elite" ? 10 : type === "veteran" ? 3 : 0);
@@ -920,8 +963,8 @@ function showCombatSpeech(unit, text) {
   state.combat.speech = { id: unit.id, text };
 }
 
-function weakestLivingAlly() {
-  const allies = living(state.team);
+function weakestOtherLivingAlly(healer) {
+  const allies = living(state.team).filter((unit) => unit.id !== healer.id);
   if (!allies.length) return null;
   return [...allies].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
 }
@@ -1096,6 +1139,7 @@ function sell(unitId) {
 
 function continueRun() {
   state.stage += 1;
+  syncEternalLevels(state.stage);
   state.phase = "route";
   state.rewards = [];
   state.shop = [];
@@ -1106,6 +1150,7 @@ function continueRun() {
 }
 
 function openShop() {
+  syncEternalLevels(state.stage);
   state.phase = "shop";
   state.shop = makeShopItems();
   state.combat.banner = "A shop opens between routes.";
@@ -1160,6 +1205,7 @@ function upgradeRarityOdds() {
 
 function hireFromShop() {
   const hero = makeHero(state.stage, 4);
+  if (hero.eternalKey) syncEternalUnit(hero, state.stage);
   state.team.push(hero);
   markEternalAcquired(hero);
   applyHireTrait(hero);
@@ -1167,6 +1213,7 @@ function hireFromShop() {
 
 function leaveShop() {
   state.stage += 1;
+  syncEternalLevels(state.stage);
   state.phase = "route";
   state.shop = [];
   state.enemies = [];
@@ -1873,9 +1920,10 @@ function drawEternalSprite(canvas, key) {
     px(11, 9, 2, 4, "#f0c3a2");
     px(5, 13, 3, 2, "#2d3340");
     px(9, 13, 3, 2, "#2d3340");
-    px(12, 7, 1, 7, "#dfe7ff");
-    px(11, 7, 3, 1, "#dfe7ff");
-    px(12, 6, 1, 2, "#a46cff");
+    px(12, 9, 1, 4, "#dfe7ff");
+    px(13, 8, 1, 3, "#f6f2e8");
+    px(11, 10, 2, 1, "#2d3340");
+    px(13, 7, 1, 1, "#b9fff4");
   }
 }
 
