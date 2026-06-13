@@ -1,4 +1,4 @@
-const appVersion = "v0.1.21";
+const appVersion = "v0.1.22";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -1738,7 +1738,11 @@ function renderMetaPanel() {
   importButton.className = "ghost-btn";
   importButton.type = "button";
   importButton.textContent = "Load Code";
-  saveActions.append(exportButton, importInput, importButton);
+  const resetButton = document.createElement("button");
+  resetButton.className = "ghost-btn danger-btn";
+  resetButton.type = "button";
+  resetButton.textContent = "Full Reset";
+  saveActions.append(exportButton, importInput, importButton, resetButton);
   header.append(saveActions);
   els.metaPanel.append(header);
 
@@ -1755,6 +1759,7 @@ function renderMetaPanel() {
     addLog("Kat Koin save code generated.");
   });
   importButton.addEventListener("click", () => importMetaCode(importInput.value));
+  resetButton.addEventListener("click", fullResetProgress);
   els.metaPanel.append(saveOutput);
 
   const grid = document.createElement("div");
@@ -1835,6 +1840,21 @@ function importMetaCode(code) {
     addLog("That Kat Koin save code could not be loaded.");
     render();
   }
+}
+
+function fullResetProgress() {
+  Object.assign(metaProgress, defaultMetaProgress());
+  try {
+    window.localStorage?.removeItem(metaSaveKey);
+  } catch (error) {
+    addLog("Saved Kat Koin progress could not be cleared from this browser.");
+  }
+  resetRunState({
+    banner: "Full reset complete. Kat Koins, upgrades, and saved progress are cleared.",
+    log: ["Full reset complete.", "Kat Koin Kollection is empty.", "Lordoran starts fresh at Camp."],
+    lastScore: null
+  });
+  render();
 }
 
 function katKoinIconMarkup() {

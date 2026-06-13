@@ -1113,9 +1113,9 @@ h1 {
 
 .meta-save-actions {
   display: grid;
-  grid-template-columns: auto minmax(170px, 1fr) auto;
+  grid-template-columns: auto minmax(170px, 1fr) auto auto;
   gap: 6px;
-  min-width: min(520px, 100%);
+  min-width: min(640px, 100%);
 }
 
 .save-code-input,
@@ -1238,6 +1238,16 @@ h1 {
   background: #151922;
   border: 1px solid rgba(246, 242, 232, 0.14);
   border-radius: 6px;
+}
+
+.danger-btn {
+  color: #f6f2e8;
+  border-color: rgba(240, 106, 106, 0.45);
+  background: #2b151a;
+}
+
+.danger-btn:hover {
+  border-color: rgba(240, 106, 106, 0.82);
 }
 
 .icon-btn {
