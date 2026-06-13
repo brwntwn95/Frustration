@@ -130,7 +130,7 @@ h1 {
 
 .run-stats {
   display: grid;
-  grid-template-columns: repeat(5, minmax(72px, 1fr));
+  grid-template-columns: repeat(6, minmax(72px, 1fr));
   gap: 10px;
   min-width: min(610px, 100%);
 }
@@ -159,6 +159,10 @@ h1 {
 }
 
 #threatStat {
+  cursor: help;
+}
+
+#katKoinStat {
   cursor: help;
 }
 
@@ -1064,6 +1068,138 @@ h1 {
 
 .odds-chip.eternal {
   background: var(--teal);
+}
+
+.meta-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 9px;
+  background: rgba(17, 21, 29, 0.82);
+  border: 1px solid rgba(164, 108, 255, 0.28);
+  border-radius: 8px;
+}
+
+.meta-head {
+  display: flex;
+  gap: 10px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.meta-head h3 {
+  margin-bottom: 3px;
+  color: var(--purple);
+  font-size: 0.98rem;
+}
+
+.meta-head p {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.kat-koin-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--purple);
+  filter: drop-shadow(0 0 7px rgba(164, 108, 255, 0.55));
+  vertical-align: -4px;
+}
+
+.meta-save-actions {
+  display: grid;
+  grid-template-columns: auto minmax(170px, 1fr) auto;
+  gap: 6px;
+  min-width: min(520px, 100%);
+}
+
+.save-code-input,
+.save-code-output {
+  min-width: 0;
+  padding: 8px 9px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  background: #0d1016;
+  border: 1px solid rgba(246, 242, 232, 0.14);
+  border-radius: 6px;
+}
+
+.save-code-output {
+  width: 100%;
+  color: var(--teal);
+  border-color: rgba(185, 255, 244, 0.38);
+}
+
+.meta-upgrade-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.meta-upgrade-card {
+  display: grid;
+  gap: 7px;
+  min-height: 112px;
+  padding: 8px;
+  background: #151922;
+  border: 1px solid rgba(246, 242, 232, 0.11);
+  border-radius: 8px;
+}
+
+.meta-upgrade-title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.meta-upgrade-title strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta-upgrade-title span {
+  color: var(--purple);
+  font-size: 0.74rem;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.meta-upgrade-card p {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.meta-upgrade-card button {
+  align-self: end;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 6px 8px;
+  color: #f6f2e8;
+  font-size: 0.78rem;
+  font-weight: 1000;
+  background: linear-gradient(135deg, #3b1b5f, #a46cff);
+  border: 1px solid rgba(246, 242, 232, 0.12);
+  border-radius: 6px;
+}
+
+.meta-upgrade-card button:disabled {
+  background: #262b36;
 }
 
 .ghost-btn,
@@ -2103,6 +2239,18 @@ h1 {
     grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   }
 
+  .meta-head {
+    display: grid;
+  }
+
+  .meta-save-actions {
+    min-width: 0;
+  }
+
+  .meta-upgrade-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .map-future {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2131,7 +2279,9 @@ h1 {
   .route-grid,
   .reward-grid,
   .shop-panel,
-  .odds-bar {
+  .odds-bar,
+  .meta-upgrade-grid,
+  .meta-save-actions {
     grid-template-columns: 1fr;
     width: 100%;
   }

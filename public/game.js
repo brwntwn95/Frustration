@@ -1,4 +1,4 @@
-const appVersion = "v0.1.19";
+const appVersion = "v0.1.20";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -58,6 +58,17 @@ const oddsUpgradeShift = {
   legendary: 0.3,
   rare: 0.4
 };
+
+const metaSaveKey = "lordoranKatKoinProgress";
+const metaUpgradeDefs = [
+  { id: "lordoranAtk", title: "Sharper Claws", stat: "atk", detail: "Permanent +1 attack for Lordoran.", baseCost: 5, costStep: 4, max: 25 },
+  { id: "lordoranHp", title: "Bigger Belly", stat: "hp", detail: "Permanent +1 max HP for Lordoran.", baseCost: 4, costStep: 3, max: 35 },
+  { id: "lordoranSpd", title: "Surprising Wiggle", stat: "spd", detail: "Permanent +1 speed for Lordoran.", baseCost: 8, costStep: 7, max: 12 },
+  { id: "recruitOdds", title: "Loaded Paw Dice", detail: "Permanent recruit odds upgrade. Trades lower tiers upward like the shop dice.", baseCost: 12, costStep: 8, max: 40 },
+  { id: "stageCoins", title: "Jingling Collar", detail: "+1 normal coin after every won fight. Max 10.", baseCost: 10, costStep: 10, max: 10 }
+];
+const metaUpgradeById = Object.fromEntries(metaUpgradeDefs.map((upgrade) => [upgrade.id, upgrade]));
+const metaProgress = loadMetaProgress();
 
 const eternalHeroes = [
   {
@@ -183,6 +194,8 @@ const state = {
 const els = {
   stageText: document.querySelector("#stageText"),
   coinText: document.querySelector("#coinText"),
+  katKoinText: document.querySelector("#katKoinText"),
+  katKoinStat: document.querySelector("#katKoinStat"),
   threatText: document.querySelector("#threatText"),
   threatStat: document.querySelector("#threatStat"),
   roundText: document.querySelector("#roundText"),
@@ -199,6 +212,7 @@ const els = {
   battleBanner: document.querySelector("#battleBanner"),
   phaseStatus: document.querySelector("#phaseStatus"),
   oddsBar: document.querySelector("#oddsBar"),
+  metaPanel: document.querySelector("#metaPanel"),
   soundButton: document.querySelector("#soundButton"),
   newRunButton: document.querySelector("#newRunButton"),
   lordoranBadge: document.querySelector("#lordoranBadge"),
@@ -207,6 +221,8 @@ const els = {
 };
 
 function makeLordoran() {
+  const upgrades = metaProgress.upgrades;
+  const maxHp = 18 + upgrades.lordoranHp;
   return {
     id: crypto.randomUUID(),
     name: "Lordoran",
@@ -214,10 +230,10 @@ function makeLordoran() {
     role: "lordoran",
     trait: roleById.lordoran.description,
     level: 1,
-    hp: 18,
-    maxHp: 18,
-    atk: 4,
-    spd: 2,
+    hp: maxHp,
+    maxHp,
+    atk: 4 + upgrades.lordoranAtk,
+    spd: 2 + upgrades.lordoranSpd,
     abilityCharge: 0,
     seed: 777,
     type: "lordoran",
@@ -238,9 +254,71 @@ function pick(list, rnd = Math.random) {
   return list[Math.floor(rnd() * list.length)];
 }
 
+function defaultMetaProgress() {
+  return {
+    katKoins: 0,
+    totalEarned: 0,
+    totalSpent: 0,
+    upgrades: Object.fromEntries(metaUpgradeDefs.map((upgrade) => [upgrade.id, 0]))
+  };
+}
+
+function normalizeMetaProgress(progress = {}) {
+  const normalized = defaultMetaProgress();
+  normalized.katKoins = Math.max(0, Math.floor(Number(progress.katKoins) || 0));
+  normalized.totalEarned = Math.max(0, Math.floor(Number(progress.totalEarned) || 0));
+  normalized.totalSpent = Math.max(0, Math.floor(Number(progress.totalSpent) || 0));
+  metaUpgradeDefs.forEach((upgrade) => {
+    const raw = progress.upgrades?.[upgrade.id];
+    normalized.upgrades[upgrade.id] = Math.max(0, Math.min(upgrade.max, Math.floor(Number(raw) || 0)));
+  });
+  return normalized;
+}
+
+function loadMetaProgress() {
+  try {
+    const stored = window.localStorage?.getItem(metaSaveKey);
+    return stored ? normalizeMetaProgress(JSON.parse(stored)) : defaultMetaProgress();
+  } catch (error) {
+    return defaultMetaProgress();
+  }
+}
+
+function saveMetaProgress() {
+  try {
+    window.localStorage?.setItem(metaSaveKey, JSON.stringify(metaProgress));
+  } catch (error) {
+    addLog("Kat Koin progress could not be saved in this browser.");
+  }
+}
+
+function encodeMetaProgress() {
+  const payload = {
+    v: 1,
+    k: metaProgress.katKoins,
+    e: metaProgress.totalEarned,
+    s: metaProgress.totalSpent,
+    u: metaProgress.upgrades
+  };
+  const text = JSON.stringify(payload);
+  return `KAT-${btoa(unescape(encodeURIComponent(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")}`;
+}
+
+function decodeMetaProgress(code) {
+  const trimmed = String(code || "").trim().replace(/^KAT-/i, "");
+  const padded = trimmed.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(trimmed.length / 4) * 4, "=");
+  const payload = JSON.parse(decodeURIComponent(escape(atob(padded))));
+  return normalizeMetaProgress({
+    katKoins: payload.k,
+    totalEarned: payload.e,
+    totalSpent: payload.s,
+    upgrades: payload.u
+  });
+}
+
 function rarityOdds(stage, bonus = 0) {
   const lift = Math.min(18, stage * 1.35 + bonus);
-  const upgradeCount = state.oddsUpgrades || 0;
+  const upgradeCount = (state.oddsUpgrades || 0) + metaProgress.upgrades.recruitOdds;
   let eternal = Math.min(0.3 + lift * 0.09, 2.3);
   let mythic = Math.min(1.1 + lift * 0.26, 9);
   let legendary = Math.min(2.2 + lift * 0.38, 16);
@@ -553,19 +631,43 @@ function calculateScore(coins, levels) {
   return coins * 10 + levels * 100 + Math.max(0, levels - 2) * 25;
 }
 
+function calculateKatKoinReward({ earnedCoins, levelsCleared, stage, threat }) {
+  if (earnedCoins <= 0 && levelsCleared <= 0) return 0;
+  const clearValue = levelsCleared * 2;
+  const coinValue = Math.floor(earnedCoins / 12);
+  const threatValue = Math.floor(Math.max(0, threat) * Math.max(1, stage) * 1.35);
+  const depthValue = Math.floor(Math.max(0, stage - 1) / 3);
+  return Math.max(1, clearValue + coinValue + threatValue + depthValue);
+}
+
+function awardKatKoins(amount) {
+  if (amount <= 0) return;
+  metaProgress.katKoins += amount;
+  metaProgress.totalEarned += amount;
+  saveMetaProgress();
+}
+
 function endRun() {
   const score = calculateScore(state.earnedCoins, state.levelsCleared);
   const earned = state.earnedCoins;
   const cleared = state.levelsCleared;
+  const katKoins = calculateKatKoinReward({
+    earnedCoins: earned,
+    levelsCleared: cleared,
+    stage: state.stage,
+    threat: state.threat
+  });
+  awardKatKoins(katKoins);
   resetRunState({
-    banner: `Run ended. Score ${score}: ${cleared} fights cleared, ${earned} coins earned.`,
+    banner: `Run ended. Score ${score}: ${cleared} fights cleared, ${earned} coins earned, ${katKoins} Kat Koins banked.`,
     log: [
       `Run score: ${score}`,
       `Fights cleared: ${cleared}`,
       `Coins earned: ${earned}`,
+      `Kat Koins banked: ${katKoins}`,
       "Lordoran returns to the start."
     ],
-    lastScore: { score, earnedCoins: earned, levelsCleared: cleared }
+    lastScore: { score, earnedCoins: earned, levelsCleared: cleared, katKoins }
   });
 }
 
@@ -889,7 +991,8 @@ function finishBattle(won, encounterType = "fight") {
   state.currentRound = 0;
   if (won) {
     const bonusCoins = state.team.filter((unit) => unitHasRole(unit, "collector")).length;
-    const coins = 5 + state.stage + (type === "elite" ? 9 : type === "veteran" ? 3 : 0) + bonusCoins;
+    const permanentCoins = metaProgress.upgrades.stageCoins;
+    const coins = 5 + state.stage + (type === "elite" ? 9 : type === "veteran" ? 3 : 0) + bonusCoins + permanentCoins;
     awardCoins(coins);
     state.levelsCleared += 1;
     updateCurrentScore();
@@ -900,7 +1003,7 @@ function finishBattle(won, encounterType = "fight") {
     state.team[0].atk += state.stage % 2 === 0 ? 1 : 0;
     syncEternalLevels(state.stage);
     state.combat.banner = `Victory. Choose one recruit or take coins.`;
-    pushLog(`Victory. The squad pockets ${coins} coins.`);
+    pushLog(`Victory. The squad pockets ${coins} coins${permanentCoins ? `, including ${permanentCoins} from Jingling Collar` : ""}.`);
     openRewards(type === "elite" ? 10 : type === "veteran" ? 3 : 0);
   } else {
     endRun();
@@ -1469,6 +1572,8 @@ function clearChoices() {
 function render() {
   els.stageText.textContent = state.stage;
   els.coinText.textContent = state.coins;
+  els.katKoinText.textContent = metaProgress.katKoins;
+  els.katKoinStat.title = `Purple paw coins for permanent upgrades. Total earned: ${metaProgress.totalEarned}. Total spent: ${metaProgress.totalSpent}.`;
   els.threatText.textContent = Number.isInteger(state.threat) ? state.threat : state.threat.toFixed(1);
   els.threatStat.title = `Threat adds ${enemyThreatBonus().toFixed(1)} enemy difficulty. It rises after elite fights and long runs.`;
   els.roundText.textContent = state.currentRound || "-";
@@ -1553,9 +1658,10 @@ function renderPhase() {
 
   if (state.phase === "route") {
     els.phaseTitle.textContent = "Choose a Route";
-    const scoreNote = state.lastScore ? ` Last run scored ${state.lastScore.score}.` : "";
-    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Choose one of the reachable forward branches; shops and events are rare special nodes.${scoreNote}`;
+    const scoreNote = state.lastScore ? ` Last run scored ${state.lastScore.score} and banked ${state.lastScore.katKoins || 0} Kat Koins.` : "";
+    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Spend Kat Koins on permanent upgrades, then choose a reachable branch.${scoreNote}`;
     renderOdds(0);
+    renderMetaPanel();
     renderRoutes();
   } else if (state.phase === "reward") {
     els.phaseTitle.textContent = "Recruit Reward";
@@ -1563,16 +1669,20 @@ function renderPhase() {
       ? "Your team is full. Sell a member from the Team panel or take coins."
       : "Choose one of three recruits, or take coins and keep the current squad.";
     renderOdds(state.lastRewardBonus);
+    renderMetaPanel();
     renderRewards();
   } else if (state.phase === "shop") {
     els.phaseTitle.textContent = "Pocket Market";
     els.phaseStatus.textContent = `Spend coins before moving to the next branch. Team size remains capped at 5.`;
     renderOdds(4);
+    renderMetaPanel();
     renderShop();
   } else {
     els.phaseTitle.textContent = "Auto Battle";
     els.phaseStatus.textContent = "The board is resolving one attack at a time.";
     renderOdds(0);
+    els.metaPanel.innerHTML = "";
+    els.metaPanel.classList.add("is-hidden");
   }
 }
 
@@ -1584,6 +1694,132 @@ function renderOdds(bonus = 0) {
     chip.innerHTML = `<span>${rarityData[entry.rarity].label}</span><strong>${entry.chance.toFixed(1)}%</strong>`;
     els.oddsBar.append(chip);
   });
+}
+
+function renderMetaPanel() {
+  els.metaPanel.innerHTML = "";
+  els.metaPanel.classList.remove("is-hidden");
+
+  const header = document.createElement("div");
+  header.className = "meta-head";
+  header.innerHTML = `<div><h3>Kat Koin Kollection</h3><p>${katKoinIconMarkup()} ${metaProgress.katKoins} purple paw Koins available. Permanent upgrades are saved to this browser.</p></div>`;
+
+  const saveActions = document.createElement("div");
+  saveActions.className = "meta-save-actions";
+  const exportButton = document.createElement("button");
+  exportButton.className = "ghost-btn";
+  exportButton.type = "button";
+  exportButton.textContent = "Get Save Code";
+  const importInput = document.createElement("input");
+  importInput.className = "save-code-input";
+  importInput.type = "text";
+  importInput.placeholder = "Paste save code";
+  importInput.setAttribute("aria-label", "Kat Koin save code");
+  const importButton = document.createElement("button");
+  importButton.className = "ghost-btn";
+  importButton.type = "button";
+  importButton.textContent = "Load Code";
+  saveActions.append(exportButton, importInput, importButton);
+  header.append(saveActions);
+  els.metaPanel.append(header);
+
+  const saveOutput = document.createElement("input");
+  saveOutput.className = "save-code-output is-hidden";
+  saveOutput.type = "text";
+  saveOutput.readOnly = true;
+  saveOutput.setAttribute("aria-label", "Generated Kat Koin save code");
+  exportButton.addEventListener("click", () => {
+    saveOutput.value = encodeMetaProgress();
+    saveOutput.classList.remove("is-hidden");
+    saveOutput.focus();
+    saveOutput.select();
+    addLog("Kat Koin save code generated.");
+  });
+  importButton.addEventListener("click", () => importMetaCode(importInput.value));
+  els.metaPanel.append(saveOutput);
+
+  const grid = document.createElement("div");
+  grid.className = "meta-upgrade-grid";
+  metaUpgradeDefs.forEach((upgrade) => {
+    const level = metaProgress.upgrades[upgrade.id];
+    const maxed = level >= upgrade.max;
+    const cost = metaUpgradeCost(upgrade.id);
+    const card = document.createElement("article");
+    card.className = "meta-upgrade-card";
+    card.innerHTML = `
+      <div class="meta-upgrade-title">
+        <strong>${upgrade.title}</strong>
+        <span>${level}/${upgrade.max}</span>
+      </div>
+      <p>${upgrade.detail}</p>
+      <button type="button" ${maxed || metaProgress.katKoins < cost ? "disabled" : ""}>
+        ${maxed ? "Maxed" : `${katKoinIconMarkup()} ${cost}`}
+      </button>
+    `;
+    card.querySelector("button").addEventListener("click", () => buyMetaUpgrade(upgrade.id));
+    grid.append(card);
+  });
+  els.metaPanel.append(grid);
+}
+
+function metaUpgradeCost(id) {
+  const upgrade = metaUpgradeById[id];
+  const level = metaProgress.upgrades[id] || 0;
+  return upgrade.baseCost + level * upgrade.costStep;
+}
+
+function buyMetaUpgrade(id) {
+  const upgrade = metaUpgradeById[id];
+  if (!upgrade) return;
+  const level = metaProgress.upgrades[id] || 0;
+  if (level >= upgrade.max) {
+    addLog(`${upgrade.title} is already maxed.`);
+    return;
+  }
+  const cost = metaUpgradeCost(id);
+  if (metaProgress.katKoins < cost) {
+    addLog("Not enough Kat Koins.");
+    return;
+  }
+  metaProgress.katKoins -= cost;
+  metaProgress.totalSpent += cost;
+  metaProgress.upgrades[id] = level + 1;
+  applyMetaUpgradeToCurrentRun(id);
+  saveMetaProgress();
+  addLog(`${upgrade.title} upgraded to ${metaProgress.upgrades[id]}.`);
+  render();
+}
+
+function applyMetaUpgradeToCurrentRun(id) {
+  const lordoran = state.team.find((unit) => unit.type === "lordoran");
+  if (!lordoran) return;
+  if (id === "lordoranAtk") lordoran.atk += 1;
+  if (id === "lordoranSpd") lordoran.spd += 1;
+  if (id === "lordoranHp") {
+    lordoran.maxHp += 1;
+    lordoran.hp += 1;
+  }
+}
+
+function importMetaCode(code) {
+  try {
+    const imported = decodeMetaProgress(code);
+    Object.assign(metaProgress, imported);
+    saveMetaProgress();
+    resetRunState({
+      banner: "Kat Koin progress loaded. Lordoran returns to Camp with the imported upgrades.",
+      log: ["Kat Koin save code loaded.", "A fresh run has been prepared with the imported upgrades."],
+      lastScore: state.lastScore
+    });
+    render();
+  } catch (error) {
+    addLog("That Kat Koin save code could not be loaded.");
+    render();
+  }
+}
+
+function katKoinIconMarkup() {
+  return '<svg class="kat-koin-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="8.2" cy="9.2" r="1.7" fill="#f6f2e8"/><circle cx="12" cy="7.8" r="1.8" fill="#f6f2e8"/><circle cx="15.8" cy="9.2" r="1.7" fill="#f6f2e8"/><path d="M8.2 15.1c1-2.2 2.1-3.3 3.8-3.3s2.8 1.1 3.8 3.3c.5 1.1-.2 2-1.4 2H9.6c-1.2 0-1.9-.9-1.4-2z" fill="#f6f2e8"/></svg>';
 }
 
 function renderRoutes() {
@@ -2291,7 +2527,11 @@ function drawLordoran(canvas) {
 }
 
 function newRun() {
-  resetRunState({ lastScore: null });
+  if (state.earnedCoins > 0 || state.levelsCleared > 0) {
+    endRun();
+  } else {
+    resetRunState({ lastScore: null });
+  }
   render();
 }
 
