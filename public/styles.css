@@ -104,9 +104,9 @@ h1 {
 
 .run-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(80px, 1fr));
+  grid-template-columns: repeat(4, minmax(78px, 1fr));
   gap: 10px;
-  min-width: min(390px, 100%);
+  min-width: min(500px, 100%);
 }
 
 .run-stats div {

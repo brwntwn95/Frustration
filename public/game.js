@@ -44,6 +44,10 @@ const state = {
   stage: 1,
   coins: 10,
   threat: 0,
+  earnedCoins: 0,
+  levelsCleared: 0,
+  currentScore: 0,
+  lastScore: null,
   phase: "route",
   team: [],
   enemies: [],
@@ -60,6 +64,8 @@ const state = {
     banner: "Pick a branch to begin the next fight.",
     locked: false
   },
+  soundOn: true,
+  audio: null,
   battleToken: 0,
   lastRewardBonus: 0,
   seed: Math.floor(Math.random() * 1000000)
@@ -69,6 +75,7 @@ const els = {
   stageText: document.querySelector("#stageText"),
   coinText: document.querySelector("#coinText"),
   threatText: document.querySelector("#threatText"),
+  scoreText: document.querySelector("#scoreText"),
   teamCount: document.querySelector("#teamCount"),
   teamList: document.querySelector("#teamList"),
   allyBoard: document.querySelector("#allyBoard"),
@@ -81,6 +88,7 @@ const els = {
   battleBanner: document.querySelector("#battleBanner"),
   phaseStatus: document.querySelector("#phaseStatus"),
   oddsBar: document.querySelector("#oddsBar"),
+  soundButton: document.querySelector("#soundButton"),
   newRunButton: document.querySelector("#newRunButton"),
   lordoranBadge: document.querySelector("#lordoranBadge"),
   unitTemplate: document.querySelector("#unitCardTemplate")
@@ -227,6 +235,66 @@ function randomRouteTemplate(type) {
   return pick(matches);
 }
 
+function awardCoins(amount) {
+  state.coins += amount;
+  state.earnedCoins += amount;
+  updateCurrentScore();
+}
+
+function updateCurrentScore() {
+  state.currentScore = calculateScore(state.earnedCoins, state.levelsCleared);
+}
+
+function calculateScore(coins, levels) {
+  return coins * 10 + levels * 100 + Math.max(0, levels - 2) * 25;
+}
+
+function endRun() {
+  const score = calculateScore(state.earnedCoins, state.levelsCleared);
+  const earned = state.earnedCoins;
+  const cleared = state.levelsCleared;
+  resetRunState({
+    banner: `Run ended. Score ${score}: ${cleared} fights cleared, ${earned} coins earned.`,
+    log: [
+      `Run score: ${score}`,
+      `Fights cleared: ${cleared}`,
+      `Coins earned: ${earned}`,
+      "Lordoran returns to the start."
+    ],
+    lastScore: { score, earnedCoins: earned, levelsCleared: cleared }
+  });
+}
+
+function resetRunState(options = {}) {
+  state.battleToken += 1;
+  state.stage = 1;
+  state.coins = 10;
+  state.threat = 0;
+  state.earnedCoins = 0;
+  state.levelsCleared = 0;
+  state.currentScore = 0;
+  state.phase = "route";
+  state.team = [makeLordoran()];
+  state.enemies = [];
+  state.pathHistory = [];
+  state.currentNode = "Camp";
+  state.rewards = [];
+  state.shop = [];
+  state.combat = {
+    activeId: null,
+    targetId: null,
+    damage: "",
+    banner: options.banner || "Pick a branch to begin the next fight.",
+    locked: false
+  };
+  state.lastRewardBonus = 0;
+  state.log = options.log || ["Lordoran begins the branchbound march."];
+  if (Object.prototype.hasOwnProperty.call(options, "lastScore")) {
+    state.lastScore = options.lastScore;
+  }
+  generateRoutes();
+}
+
 function startRoute(route) {
   if (state.combat.locked) return;
   state.currentNode = route.title;
@@ -296,6 +364,7 @@ async function playBattle(elite = false, token = state.battleToken) {
       state.combat.targetId = target.id;
       state.combat.damage = "";
       state.combat.banner = `${unit.name} prepares to strike ${target.name}.`;
+      playSound("attack");
       render();
       await wait(360);
       if (token !== state.battleToken) return;
@@ -303,6 +372,7 @@ async function playBattle(elite = false, token = state.battleToken) {
       target.hp -= unit.atk;
       state.combat.damage = `-${unit.atk}`;
       state.combat.banner = `${unit.name} hits ${target.name} for ${unit.atk}.`;
+      playSound("hit");
       pushLog(`${unit.name} hits ${target.name} for ${unit.atk}.`);
       if (target.hp <= 0) {
         pushLog(`${target.name} falls.`);
@@ -337,7 +407,9 @@ function finishBattle(won, elite = false) {
   if (won) {
     const bonusCoins = state.team.filter((unit) => unit.trait.includes("Lucky")).length;
     const coins = 5 + state.stage + (elite ? 6 : 0) + bonusCoins;
-    state.coins += coins;
+    awardCoins(coins);
+    state.levelsCleared += 1;
+    updateCurrentScore();
     state.threat += elite ? 1 : 0.5;
     state.team[0].maxHp += 1;
     state.team[0].hp = state.team[0].maxHp;
@@ -349,15 +421,7 @@ function finishBattle(won, elite = false) {
     pushLog(`Victory. The squad pockets ${coins} coins.`);
     openRewards(elite ? 7 : 0);
   } else {
-    state.combat.banner = "Defeat. Lordoran retreats and the route map reshuffles.";
-    pushLog("Defeat. Lordoran retreats, bruised but indignant.");
-    state.coins = Math.max(0, state.coins - 4);
-    state.team.forEach((unit) => {
-      unit.hp = Math.max(1, unit.hp);
-    });
-    healTeam(false);
-    state.phase = "route";
-    generateRoutes();
+    endRun();
   }
   render();
 }
@@ -376,6 +440,63 @@ function battleSpeed(unit) {
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function getAudioContext() {
+  if (!state.soundOn) return null;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return null;
+  if (!state.audio) state.audio = new AudioCtx();
+  if (state.audio.state === "suspended") {
+    state.audio.resume().catch(() => {});
+  }
+  return state.audio;
+}
+
+function playSound(kind) {
+  const audio = getAudioContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.connect(gain);
+  gain.connect(audio.destination);
+
+  if (kind === "attack") {
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(520, now);
+    osc.frequency.exponentialRampToValueAtTime(240, now + 0.09);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    osc.start(now);
+    osc.stop(now + 0.13);
+    return;
+  }
+
+  osc.type = "square";
+  osc.frequency.setValueAtTime(130, now);
+  osc.frequency.exponentialRampToValueAtTime(70, now + 0.08);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.11, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+  osc.start(now);
+  osc.stop(now + 0.17);
+}
+
+function toggleSound() {
+  state.soundOn = !state.soundOn;
+  if (!state.soundOn && state.audio) {
+    state.audio.suspend().catch(() => {});
+  } else {
+    getAudioContext();
+  }
+  renderSoundButton();
+}
+
+function renderSoundButton() {
+  els.soundButton.textContent = state.soundOn ? "Sound On" : "Sound Off";
+  els.soundButton.setAttribute("aria-pressed", String(state.soundOn));
 }
 
 function pushLog(message) {
@@ -412,7 +533,7 @@ function applyHireTrait(hero) {
     addLog("Lordoran accepts a snack pact and gains +1 attack.");
   }
   if (hero.trait.includes("Collector")) {
-    state.coins += 1;
+    awardCoins(1);
   }
 }
 
@@ -491,7 +612,7 @@ function runMystery() {
   const roll = Math.random();
   if (roll < 0.34) {
     const coins = 7 + state.stage;
-    state.coins += coins;
+    awardCoins(coins);
     state.stage += 1;
     state.phase = "route";
     state.enemies = [];
@@ -524,12 +645,14 @@ function render() {
   els.stageText.textContent = state.stage;
   els.coinText.textContent = state.coins;
   els.threatText.textContent = Number.isInteger(state.threat) ? state.threat : state.threat.toFixed(1);
+  els.scoreText.textContent = state.currentScore;
   els.teamCount.textContent = `${state.team.length}/5`;
   els.battleBanner.textContent = state.combat.banner;
   renderTeam();
   renderBoard();
   renderPhase();
   renderLog();
+  renderSoundButton();
   drawLordoran(els.lordoranBadge, 777);
 }
 
@@ -572,7 +695,8 @@ function renderPhase() {
 
   if (state.phase === "route") {
     els.phaseTitle.textContent = "Choose a Route";
-    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Choose one of four forward branches; shops and events are rare special nodes.`;
+    const scoreNote = state.lastScore ? ` Last run scored ${state.lastScore.score}.` : "";
+    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Choose one of four forward branches; shops and events are rare special nodes.${scoreNote}`;
     renderOdds(0);
     renderRoutes();
   } else if (state.phase === "reward") {
@@ -649,7 +773,7 @@ function renderRewards() {
   skip.type = "button";
   skip.textContent = "Take 3 Coins";
   skip.addEventListener("click", () => {
-    state.coins += 3;
+    awardCoins(3);
     continueRun();
   });
   els.rewardChoices.append(skip);
@@ -794,52 +918,40 @@ function drawLordoran(canvas) {
     ctx.fillRect(Math.round(x * scale), Math.round(y * scale), Math.round(w * scale), Math.round(h * scale));
   }
 
-  px(4, 2, 3, 3, "#222833");
-  px(10, 2, 3, 3, "#222833");
-  px(5, 3, 1, 1, "#f6c7d7");
-  px(11, 3, 1, 1, "#f6c7d7");
-  px(3, 5, 11, 7, "#222833");
-  px(2, 8, 13, 5, "#222833");
-  px(3, 4, 11, 1, "#f6f2e8");
-  px(5, 5, 7, 6, "#f6f2e8");
-  px(4, 9, 9, 4, "#f6f2e8");
+  px(4, 2, 3, 3, "#f4eadb");
+  px(10, 2, 3, 3, "#f4eadb");
+  px(5, 3, 1, 1, "#f0a9b9");
+  px(11, 3, 1, 1, "#f0a9b9");
+  px(3, 5, 11, 7, "#f4eadb");
+  px(2, 8, 13, 5, "#f4eadb");
+  px(3, 4, 11, 1, "#ffffff");
+  px(5, 5, 7, 6, "#fffaf0");
+  px(4, 9, 9, 4, "#fffaf0");
+  px(6, 4, 1, 2, "#9a6a3a");
+  px(8, 4, 1, 2, "#9a6a3a");
+  px(10, 4, 1, 2, "#9a6a3a");
+  px(3, 7, 2, 1, "#9a6a3a");
+  px(12, 7, 2, 1, "#9a6a3a");
+  px(2, 10, 2, 1, "#b57a42");
+  px(13, 10, 2, 1, "#b57a42");
   px(5, 6, 2, 1, "#0d1016");
   px(10, 6, 2, 1, "#0d1016");
   px(8, 7, 1, 1, "#f2a0b7");
   px(7, 8, 3, 1, "#0d1016");
   px(6, 10, 5, 2, "#ffffff");
-  px(2, 9, 2, 2, "#f6f2e8");
-  px(13, 9, 2, 2, "#f6f2e8");
-  px(4, 13, 3, 1, "#0d1016");
-  px(10, 13, 3, 1, "#0d1016");
+  px(2, 9, 2, 2, "#fffaf0");
+  px(13, 9, 2, 2, "#fffaf0");
+  px(4, 13, 3, 1, "#9a6a3a");
+  px(10, 13, 3, 1, "#9a6a3a");
   px(3, 7, 1, 1, "#ffffff");
   px(13, 7, 1, 1, "#ffffff");
 }
 
 function newRun() {
-  state.battleToken += 1;
-  state.stage = 1;
-  state.coins = 10;
-  state.threat = 0;
-  state.phase = "route";
-  state.team = [makeLordoran()];
-  state.enemies = [];
-  state.pathHistory = [];
-  state.currentNode = "Camp";
-  state.rewards = [];
-  state.shop = [];
-  state.combat = {
-    activeId: null,
-    targetId: null,
-    damage: "",
-    banner: "Pick a branch to begin the next fight.",
-    locked: false
-  };
-  state.lastRewardBonus = 0;
-  state.log = ["Lordoran begins the branchbound march."];
-  generateRoutes();
+  resetRunState({ lastScore: null });
   render();
 }
 
+els.soundButton.addEventListener("click", toggleSound);
 els.newRunButton.addEventListener("click", newRun);
 newRun();
