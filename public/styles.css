@@ -1027,14 +1027,14 @@ h1 {
 
 .odds-bar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
   margin-bottom: 8px;
 }
 
 .odds-chip {
-  min-height: 42px;
-  padding: 6px 8px;
+  min-height: 38px;
+  padding: 5px 6px;
   color: #12161d;
   background: var(--blue);
   border-radius: 8px;
@@ -1042,15 +1042,18 @@ h1 {
 
 .odds-chip span {
   display: block;
-  font-size: 0.68rem;
+  overflow: hidden;
+  font-size: 0.61rem;
   font-weight: 1000;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .odds-chip strong {
   display: block;
-  margin-top: 2px;
-  font-size: 1rem;
+  margin-top: 1px;
+  font-size: 0.94rem;
 }
 
 .odds-chip.rare {
