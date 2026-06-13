@@ -1,4 +1,4 @@
-const appVersion = "v0.1.20";
+const appVersion = "v0.1.21";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -65,7 +65,8 @@ const metaUpgradeDefs = [
   { id: "lordoranHp", title: "Bigger Belly", stat: "hp", detail: "Permanent +1 max HP for Lordoran.", baseCost: 4, costStep: 3, max: 35 },
   { id: "lordoranSpd", title: "Surprising Wiggle", stat: "spd", detail: "Permanent +1 speed for Lordoran.", baseCost: 8, costStep: 7, max: 12 },
   { id: "recruitOdds", title: "Loaded Paw Dice", detail: "Permanent recruit odds upgrade. Trades lower tiers upward like the shop dice.", baseCost: 12, costStep: 8, max: 40 },
-  { id: "stageCoins", title: "Jingling Collar", detail: "+1 normal coin after every won fight. Max 10.", baseCost: 10, costStep: 10, max: 10 }
+  { id: "stageCoins", title: "Jingling Collar", detail: "+1 normal coin after every won fight. Max 10.", baseCost: 10, costStep: 10, max: 10 },
+  { id: "startingCoins", title: "Plush Purse", detail: "+1 starting coin at the beginning of every run. Max 20.", baseCost: 6, costStep: 5, max: 20 }
 ];
 const metaUpgradeById = Object.fromEntries(metaUpgradeDefs.map((upgrade) => [upgrade.id, upgrade]));
 const metaProgress = loadMetaProgress();
@@ -589,8 +590,9 @@ function mapPanForCurrent() {
 
 function rollCombatRoute(depth = state.stage) {
   if (depth <= 2) return "fight";
-  const eliteChance = depth <= 4 ? 0.02 : Math.min(0.025 + depth * 0.012, 0.18);
-  const veteranChance = Math.min(0.16 + depth * 0.018, 0.42);
+  const lateRamp = Math.max(0, depth - 30);
+  const eliteChance = depth <= 4 ? 0.02 : Math.min(0.025 + depth * 0.012 + lateRamp * 0.006, 0.34);
+  const veteranChance = Math.min(0.16 + depth * 0.018 + lateRamp * 0.003, 0.5);
   const roll = Math.random();
   if (roll < eliteChance) return "elite";
   if (roll < eliteChance + veteranChance) return "veteran";
@@ -633,10 +635,13 @@ function calculateScore(coins, levels) {
 
 function calculateKatKoinReward({ earnedCoins, levelsCleared, stage, threat }) {
   if (earnedCoins <= 0 && levelsCleared <= 0) return 0;
-  const clearValue = levelsCleared * 2;
-  const coinValue = Math.floor(earnedCoins / 12);
-  const threatValue = Math.floor(Math.max(0, threat) * Math.max(1, stage) * 1.35);
-  const depthValue = Math.floor(Math.max(0, stage - 1) / 3);
+  if (stage < 10) return 0;
+  const postGateStage = Math.max(0, stage - 9);
+  const postGateClears = Math.max(0, levelsCleared - 8);
+  const clearValue = Math.floor(postGateClears / 4);
+  const coinValue = Math.floor(earnedCoins / 140);
+  const threatValue = Math.floor(Math.max(0, threat) * postGateStage / 55);
+  const depthValue = Math.floor(postGateStage / 7);
   return Math.max(1, clearValue + coinValue + threatValue + depthValue);
 }
 
@@ -674,7 +679,7 @@ function endRun() {
 function resetRunState(options = {}) {
   state.battleToken += 1;
   state.stage = 1;
-  state.coins = 10;
+  state.coins = 10 + metaProgress.upgrades.startingCoins;
   state.threat = 0;
   state.currentRound = 0;
   state.earnedCoins = 0;
@@ -1655,13 +1660,17 @@ function renderPhase() {
   els.routeChoices.classList.toggle("is-hidden", state.phase !== "route");
   els.rewardChoices.classList.toggle("is-hidden", state.phase !== "reward");
   els.shopPanel.classList.toggle("is-hidden", state.phase !== "shop");
+  hideMetaPanel();
 
   if (state.phase === "route") {
     els.phaseTitle.textContent = "Choose a Route";
     const scoreNote = state.lastScore ? ` Last run scored ${state.lastScore.score} and banked ${state.lastScore.katKoins || 0} Kat Koins.` : "";
-    els.phaseStatus.textContent = `Lordoran is at ${state.currentNode}. Spend Kat Koins on permanent upgrades, then choose a reachable branch.${scoreNote}`;
+    const atFreshCamp = canShowMetaPanel();
+    els.phaseStatus.textContent = atFreshCamp
+      ? `Lordoran is at Camp. Spend Kat Koins on permanent upgrades, then choose the first branch.${scoreNote}`
+      : `Lordoran is at ${state.currentNode}. Choose one of the reachable forward branches; shops and events are rare special nodes.${scoreNote}`;
     renderOdds(0);
-    renderMetaPanel();
+    if (atFreshCamp) renderMetaPanel();
     renderRoutes();
   } else if (state.phase === "reward") {
     els.phaseTitle.textContent = "Recruit Reward";
@@ -1669,21 +1678,31 @@ function renderPhase() {
       ? "Your team is full. Sell a member from the Team panel or take coins."
       : "Choose one of three recruits, or take coins and keep the current squad.";
     renderOdds(state.lastRewardBonus);
-    renderMetaPanel();
     renderRewards();
   } else if (state.phase === "shop") {
     els.phaseTitle.textContent = "Pocket Market";
     els.phaseStatus.textContent = `Spend coins before moving to the next branch. Team size remains capped at 5.`;
     renderOdds(4);
-    renderMetaPanel();
     renderShop();
   } else {
     els.phaseTitle.textContent = "Auto Battle";
     els.phaseStatus.textContent = "The board is resolving one attack at a time.";
     renderOdds(0);
-    els.metaPanel.innerHTML = "";
-    els.metaPanel.classList.add("is-hidden");
   }
+}
+
+function canShowMetaPanel() {
+  return state.phase === "route"
+    && state.stage === 1
+    && state.levelsCleared === 0
+    && state.earnedCoins === 0
+    && state.currentNode === "Camp"
+    && !state.combat.locked;
+}
+
+function hideMetaPanel() {
+  els.metaPanel.innerHTML = "";
+  els.metaPanel.classList.add("is-hidden");
 }
 
 function renderOdds(bonus = 0) {
