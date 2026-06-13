@@ -1,4 +1,4 @@
-const appVersion = "v0.1.14";
+const appVersion = "v0.1.18";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -167,6 +167,8 @@ const state = {
     damage: "",
     effects: [],
     speech: null,
+    motion: "",
+    activeSide: "",
     tauntId: null,
     banner: "Pick a branch to begin the next fight.",
     locked: false
@@ -597,6 +599,8 @@ function resetRunState(options = {}) {
     damage: "",
     effects: [],
     speech: null,
+    motion: "",
+    activeSide: "",
     tauntId: null,
     banner: options.banner || "Pick a branch to begin the next fight.",
     locked: false
@@ -652,6 +656,8 @@ function startBattle(encounterType = "fight") {
     damage: "",
     effects: [],
     speech: null,
+    motion: "",
+    activeSide: "",
     tauntId: null,
     banner: `${label} begins. Teams line up.`,
     locked: true
@@ -688,6 +694,8 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
     pushLog(`Round ${round}`);
     state.combat.effects = [];
     state.combat.speech = null;
+    state.combat.motion = "";
+    state.combat.activeSide = "";
     state.combat.tauntId = null;
     if (!await triggerRoundStartAbilities(token)) return;
     const actors = [...living(state.team).map((unit) => ({ id: unit.id, unit, side: "ally" })), ...living(state.enemies).map((unit) => ({ id: unit.id, unit, side: "enemy" }))]
@@ -702,8 +710,10 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         state.combat.activeId = unit.id;
         state.combat.targetId = unit.id;
         state.combat.damage = "";
-        state.combat.effects = [{ id: unit.id, text: "STUN", kind: "ability" }];
+        state.combat.effects = [{ id: unit.id, text: "STUN", kind: "ability", visual: "stun" }];
         state.combat.speech = null;
+        state.combat.motion = "stun";
+        state.combat.activeSide = actor.side;
         state.combat.banner = `${unit.name} is stunned and loses their turn.`;
         pushLog(`${unit.name} is stunned.`);
         playSound("ability", "tank");
@@ -731,8 +741,10 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
             state.combat.activeId = unit.id;
             state.combat.targetId = unit.id;
             state.combat.damage = "";
-            state.combat.effects = teamHeals.map((heal) => ({ id: heal.target.id, text: `+${heal.amount}`, kind: "heal" }));
+            state.combat.effects = teamHeals.map((heal) => ({ id: heal.target.id, text: `+${heal.amount}`, kind: "heal", visual: "wisp" }));
             state.combat.speech = null;
+            state.combat.motion = "heal";
+            state.combat.activeSide = actor.side;
             state.combat.banner = `${unit.name} prepares a shared heal for ${total} total HP.`;
             playSound("heal", "medic");
             render();
@@ -755,15 +767,17 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
           const selfAmount = amount > 0 ? medicHealAmount(unit, unit) : 0;
           const healEffects = amount > 0
             ? [
-                { id: healTarget.id, text: `+${amount}`, kind: "heal" },
-                ...(selfAmount > 0 ? [{ id: unit.id, text: `+${selfAmount}`, kind: "heal" }] : [])
+                { id: healTarget.id, text: `+${amount}`, kind: "heal", visual: "wisp" },
+                ...(selfAmount > 0 ? [{ id: unit.id, text: `+${selfAmount}`, kind: "heal", visual: "wisp" }] : [])
               ]
-            : [{ id: unit.id, text: "READY", kind: "ability" }];
+            : [{ id: unit.id, text: "READY", kind: "ability", visual: "wisp" }];
           state.combat.activeId = unit.id;
           state.combat.targetId = healTarget.id;
           state.combat.damage = "";
           state.combat.effects = healEffects;
           state.combat.speech = null;
+          state.combat.motion = "heal";
+          state.combat.activeSide = actor.side;
           state.combat.banner = amount > 0
             ? `${unit.name} prepares to heal ${healTarget.name} for ${amount}${selfAmount > 0 ? ` and themself for ${selfAmount}` : ""}.`
             : `${unit.name} holds a heal. Everyone else is fine.`;
@@ -810,6 +824,8 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       state.combat.damage = "";
       state.combat.effects = [];
       state.combat.speech = null;
+      state.combat.motion = "windup";
+      state.combat.activeSide = actor.side;
       state.combat.banner = `${unit.name} prepares to strike ${target.name}.`;
       playSound("attack", roleForUnit(unit).id);
       render();
@@ -819,7 +835,9 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       const attackDamage = Math.max(1, Math.round(unit.atk * (timedAbility.damageMultiplier || 1)));
       target.hp -= attackDamage;
       state.combat.damage = `-${attackDamage}`;
-      state.combat.effects = [{ id: target.id, text: `-${attackDamage}`, kind: "damage" }];
+      state.combat.effects = [{ id: target.id, text: `-${attackDamage}`, kind: "damage", visual: timedAbility.visual || attackVisualFor(unit) }];
+      state.combat.motion = "attack";
+      state.combat.activeSide = actor.side;
       state.combat.banner = `${unit.name} hits ${target.name} for ${attackDamage}.`;
       playSound("hit", roleForUnit(unit).id);
       pushLog(`${unit.name} hits ${target.name} for ${attackDamage}.`);
@@ -832,7 +850,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       if (actor.side === "ally" && unit.eternalKey === "lucas" && Math.random() < 0.2) {
         const recoil = Math.max(1, Math.ceil(attackDamage / 2));
         unit.hp -= recoil;
-        state.combat.effects.push({ id: unit.id, text: `-${recoil}`, kind: "damage" });
+        state.combat.effects.push({ id: unit.id, text: `-${recoil}`, kind: "damage", visual: "recoil" });
         showCombatSpeech(unit, "Check this shit out");
         pushLog(`Lucas also damages himself for ${recoil}.`);
         if (unit.hp <= 0) pushLog("Lucas immediately regrets checking that out.");
@@ -842,7 +860,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         const splashDamage = Math.max(1, Math.round(unit.atk * timedAbility.splashMultiplier));
         living(state.enemies).filter((enemy) => enemy.id !== target.id).forEach((enemy) => {
           enemy.hp -= splashDamage;
-          state.combat.effects.push({ id: enemy.id, text: `-${splashDamage}`, kind: "damage" });
+          state.combat.effects.push({ id: enemy.id, text: `-${splashDamage}`, kind: "damage", visual: timedAbility.visual || "dagger" });
           if (enemy.hp <= 0) pushLog(`${enemy.name} falls.`);
         });
         pushLog(`${unit.name} fans out dagger strikes for ${splashDamage} splash damage.`);
@@ -864,6 +882,8 @@ function finishBattle(won, encounterType = "fight") {
   state.combat.damage = "";
   state.combat.effects = [];
   state.combat.speech = null;
+  state.combat.motion = "";
+  state.combat.activeSide = "";
   state.combat.tauntId = null;
   state.combat.locked = false;
   state.currentRound = 0;
@@ -903,38 +923,43 @@ async function resolveTimedAttackAbility(unit, target, targets, token) {
   state.combat.activeId = unit.id;
   state.combat.targetId = target?.id || unit.id;
   state.combat.damage = "";
-  state.combat.effects = [{ id: unit.id, text: "READY", kind: "ability" }];
+  state.combat.effects = [{ id: unit.id, text: "READY", kind: "ability", visual: "charge" }];
   state.combat.speech = null;
+  state.combat.motion = "ability";
+  state.combat.activeSide = unitSide(unit);
 
   if (role === "brawler") {
     unit.atk += 1;
-    state.combat.effects = [{ id: unit.id, text: "+1 ATK", kind: "ability" }];
+    state.combat.effects = [{ id: unit.id, text: "+1 ATK", kind: "ability", visual: "fist" }];
+    state.combat.motion = "brawler";
     state.combat.banner = `${unit.name} cashes in brawler charge and gains +1 attack.`;
     pushLog(`${unit.name}'s brawler ability raises attack to ${unit.atk}.`);
     playSound("ability", "brawler");
     render();
     await wait(720);
-    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0 } : null;
+    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0, visual: "fist" } : null;
   }
 
   if (role === "scout") {
-    state.combat.effects = [{ id: target.id, text: "CRIT", kind: "ability" }];
+    state.combat.effects = [{ id: target.id, text: "CRIT", kind: "ability", visual: "crit" }];
+    state.combat.motion = "crit";
     state.combat.banner = `${unit.name} lines up a guaranteed critical strike.`;
     pushLog(`${unit.name}'s scout ability guarantees a critical hit.`);
     playSound("ability", "scout");
     render();
     await wait(620);
-    return token === state.battleToken ? { damageMultiplier: 1.3, splashMultiplier: 0 } : null;
+    return token === state.battleToken ? { damageMultiplier: 1.3, splashMultiplier: 0, visual: "crit" } : null;
   }
 
   if (role === "backliner") {
-    state.combat.effects = [{ id: target.id, text: "DAGGER", kind: "ability" }];
+    state.combat.effects = targets.map((enemy) => ({ id: enemy.id, text: enemy.id === target.id ? "DAGGER" : "20%", kind: "ability", visual: "dagger" }));
+    state.combat.motion = "dagger";
     state.combat.banner = `${unit.name} readies a dagger chain through the enemy line.`;
     pushLog(`${unit.name}'s assassin ability will splash through every enemy.`);
     playSound("ability", "backliner");
     render();
     await wait(620);
-    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0.2 } : null;
+    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0.2, visual: "dagger" } : null;
   }
 
   if (role === "lordoran") {
@@ -945,14 +970,15 @@ async function resolveTimedAttackAbility(unit, target, targets, token) {
       enemy.stunTurns = Math.max(enemy.stunTurns || 0, 1);
     });
     state.combat.targetId = unit.id;
-    state.combat.effects = enemies.map((enemy) => ({ id: enemy.id, text: `-${damage} STUN`, kind: "ability" }));
+    state.combat.effects = enemies.map((enemy) => ({ id: enemy.id, text: `-${damage} STUN`, kind: "ability", visual: "girth" }));
+    state.combat.motion = "girth";
     showCombatSpeech(unit, "GIRTH");
     state.combat.banner = `${unit.name} uses Girth, splashing every enemy for ${damage} and stunning them.`;
     pushLog(`${unit.name} uses Girth for ${damage} damage to all enemies and 1 turn of stun.`);
     playSound("ability", "lordoran");
     render();
     await wait(1040);
-    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0 } : null;
+    return token === state.battleToken ? { damageMultiplier: 1, splashMultiplier: 0, visual: "girth" } : null;
   }
 
   return { damageMultiplier: 1, splashMultiplier: 0 };
@@ -977,8 +1003,10 @@ async function triggerRoundStartAbilities(token) {
   state.combat.activeId = tank.id;
   state.combat.targetId = tank.id;
   state.combat.damage = "";
-  state.combat.effects = [{ id: tank.id, text: "TAUNT", kind: "ability" }];
+  state.combat.effects = [{ id: tank.id, text: "TAUNT", kind: "ability", visual: "shield" }];
   state.combat.speech = null;
+  state.combat.motion = "shield";
+  state.combat.activeSide = unitSide(tank);
   state.combat.tauntId = tank.id;
   state.combat.banner = `${tank.name} spends full guard charge and taunts the enemies this round.`;
   pushLog(`${tank.name} spends guard charge. Enemies must target them this round.`);
@@ -1017,7 +1045,9 @@ async function resolveEternalTurnStart(unit, token) {
     state.combat.activeId = unit.id;
     state.combat.targetId = unit.id;
     state.combat.damage = "";
-    state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability" }];
+    state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability", visual: "stun" }];
+    state.combat.motion = "ability";
+    state.combat.activeSide = unitSide(unit);
     showCombatSpeech(unit, "Still on duties.");
     state.combat.banner = `${unit.name} is still handling wifely duties.`;
     pushLog(`${unit.name} sits this turn out.`);
@@ -1032,7 +1062,9 @@ async function resolveEternalTurnStart(unit, token) {
     state.combat.activeId = unit.id;
     state.combat.targetId = unit.id;
     state.combat.damage = "";
-    state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability" }];
+    state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability", visual: "stun" }];
+    state.combat.motion = "ability";
+    state.combat.activeSide = unitSide(unit);
     showCombatSpeech(unit, "I have wifely duties.");
     state.combat.banner = `${unit.name}: "I have wifely duties."`;
     pushLog(`${unit.name} has wifely duties and sits out.`);
@@ -1046,7 +1078,9 @@ async function resolveEternalTurnStart(unit, token) {
     state.combat.activeId = unit.id;
     state.combat.targetId = unit.id;
     state.combat.damage = "";
-    state.combat.effects = [{ id: unit.id, text: "???", kind: "ability" }];
+    state.combat.effects = [{ id: unit.id, text: "???", kind: "ability", visual: "fist" }];
+    state.combat.motion = "brawler";
+    state.combat.activeSide = unitSide(unit);
     showCombatSpeech(unit, "Uhhhhhhh");
     state.combat.banner = `${unit.name} takes a gummy and forgets what a turn is.`;
     pushLog(`${unit.name}: Uhhhhhhh`);
@@ -1069,7 +1103,9 @@ async function resolveJamieOutburst(unit, token, healingDone = 0) {
   state.combat.activeId = unit.id;
   state.combat.targetId = target.id;
   state.combat.damage = "";
-  state.combat.effects = [{ id: target.id, text: `-${damage}`, kind: "curse" }];
+  state.combat.effects = [{ id: target.id, text: `-${damage}`, kind: "curse", visual: "curse" }];
+  state.combat.motion = "curse";
+  state.combat.activeSide = unitSide(unit);
   showCombatSpeech(unit, "fuck you");
   state.combat.banner = `${unit.name} converts bedside manner into ${damage} damage to ${target.name}.`;
   pushLog(`${unit.name} to ${target.name}: fuck you. ${damage} damage.`);
@@ -1082,6 +1118,17 @@ async function resolveJamieOutburst(unit, token, healingDone = 0) {
 
 function showCombatSpeech(unit, text) {
   state.combat.speech = { id: unit.id, text };
+}
+
+function attackVisualFor(unit) {
+  const role = roleForUnit(unit).id;
+  if (role === "medic") return "wisp";
+  if (role === "tank") return "shield";
+  if (role === "brawler") return "fist";
+  if (role === "backliner") return "dagger";
+  if (role === "scout") return "crit";
+  if (role === "lordoran") return "girth";
+  return unit.type === "enemy" ? "claw" : "strike";
 }
 
 function weakestOtherLivingAlly(healer) {
@@ -1122,6 +1169,13 @@ function getBattleUnit(id) {
   return state.team.find((unit) => unit.id === id) || state.enemies.find((unit) => unit.id === id);
 }
 
+function unitSide(unit) {
+  if (!unit) return "";
+  if (state.team.some((member) => member.id === unit.id)) return "ally";
+  if (state.enemies.some((enemy) => enemy.id === unit.id)) return "enemy";
+  return "";
+}
+
 function battleSpeed(unit) {
   return unit.spd;
 }
@@ -1151,6 +1205,10 @@ function playSound(kind, roleId = "") {
 }
 
 function playTone(audio, now, layer) {
+  if (layer.type === "noise") {
+    playNoise(audio, now, layer);
+    return;
+  }
   const osc = audio.createOscillator();
   const gain = audio.createGain();
   osc.connect(gain);
@@ -1167,24 +1225,56 @@ function playTone(audio, now, layer) {
   osc.stop(start + layer.length + 0.02);
 }
 
+function playNoise(audio, now, layer) {
+  const duration = layer.length || 0.16;
+  const delay = layer.delay || 0;
+  const start = now + delay;
+  const buffer = audio.createBuffer(1, Math.max(1, Math.floor(audio.sampleRate * duration)), audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let index = 0; index < data.length; index += 1) {
+    data[index] = (Math.random() * 2 - 1) * (1 - index / data.length);
+  }
+  const source = audio.createBufferSource();
+  const filter = audio.createBiquadFilter();
+  const gain = audio.createGain();
+  source.buffer = buffer;
+  filter.type = layer.filter || "bandpass";
+  filter.frequency.setValueAtTime(layer.from || 900, start);
+  filter.frequency.exponentialRampToValueAtTime(layer.to || 260, start + Math.max(0.02, layer.slide || duration));
+  filter.Q.setValueAtTime(layer.q || 5, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(layer.volume || 0.05, start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(audio.destination);
+  source.start(start);
+  source.stop(start + duration + 0.02);
+}
+
 function soundProfile(kind, roleId) {
   const layered = (base, accent) => ({ layers: [base, accent] });
+  const triple = (a, b, c) => ({ layers: [a, b, c] });
   const attackProfiles = {
-    brawler: layered({ type: "square", from: 180, to: 82, slide: 0.1, length: 0.16, volume: 0.12 }, { type: "triangle", from: 92, to: 58, slide: 0.11, length: 0.18, volume: 0.06 }),
-    backliner: layered({ type: "sawtooth", from: 860, to: 310, slide: 0.07, length: 0.12, volume: 0.07 }, { type: "triangle", from: 1220, to: 760, slide: 0.04, length: 0.08, volume: 0.035, delay: 0.035 }),
+    brawler: layered({ type: "triangle", from: 220, to: 82, slide: 0.11, length: 0.18, volume: 0.11 }, { type: "noise", from: 420, to: 120, slide: 0.12, length: 0.16, volume: 0.035, filter: "lowpass", q: 1.2 }),
+    backliner: triple({ type: "noise", from: 3300, to: 780, slide: 0.11, length: 0.16, volume: 0.075, filter: "bandpass", q: 8 }, { type: "sine", from: 980, to: 640, slide: 0.08, length: 0.12, volume: 0.035, delay: 0.02 }, { type: "triangle", from: 1680, to: 1180, slide: 0.05, length: 0.08, volume: 0.025, delay: 0.055 }),
     scout: layered({ type: "triangle", from: 680, to: 420, slide: 0.06, length: 0.1, volume: 0.07 }, { type: "sine", from: 920, to: 680, slide: 0.05, length: 0.08, volume: 0.035, delay: 0.03 }),
-    tank: layered({ type: "square", from: 240, to: 160, slide: 0.12, length: 0.18, volume: 0.09 }, { type: "sine", from: 120, to: 90, slide: 0.16, length: 0.22, volume: 0.06 }),
+    tank: layered({ type: "triangle", from: 240, to: 160, slide: 0.12, length: 0.18, volume: 0.08 }, { type: "sine", from: 120, to: 90, slide: 0.16, length: 0.22, volume: 0.055 }),
     lordoran: layered({ type: "triangle", from: 420, to: 210, slide: 0.11, length: 0.16, volume: 0.1 }, { type: "sine", from: 260, to: 130, slide: 0.12, length: 0.18, volume: 0.05 })
   };
   const hitProfiles = {
-    brawler: layered({ type: "square", from: 120, to: 54, slide: 0.09, length: 0.17, volume: 0.13 }, { type: "sine", from: 62, to: 38, slide: 0.12, length: 0.2, volume: 0.06 }),
-    backliner: layered({ type: "triangle", from: 620, to: 180, slide: 0.08, length: 0.13, volume: 0.09 }, { type: "sawtooth", from: 950, to: 460, slide: 0.05, length: 0.08, volume: 0.035 }),
-    tank: layered({ type: "square", from: 160, to: 90, slide: 0.12, length: 0.18, volume: 0.11 }, { type: "sine", from: 90, to: 55, slide: 0.16, length: 0.2, volume: 0.05 }),
-    enemy: layered({ type: "sawtooth", from: 190, to: 70, slide: 0.09, length: 0.16, volume: 0.09 }, { type: "square", from: 95, to: 48, slide: 0.12, length: 0.18, volume: 0.04 })
+    brawler: layered({ type: "triangle", from: 140, to: 54, slide: 0.09, length: 0.18, volume: 0.12 }, { type: "noise", from: 340, to: 90, slide: 0.12, length: 0.17, volume: 0.045, filter: "lowpass", q: 1.1 }),
+    backliner: triple({ type: "noise", from: 2600, to: 520, slide: 0.08, length: 0.13, volume: 0.08, filter: "bandpass", q: 9 }, { type: "triangle", from: 620, to: 190, slide: 0.08, length: 0.13, volume: 0.055 }, { type: "sine", from: 1400, to: 900, slide: 0.04, length: 0.07, volume: 0.02, delay: 0.04 }),
+    tank: layered({ type: "triangle", from: 160, to: 90, slide: 0.12, length: 0.18, volume: 0.1 }, { type: "noise", from: 300, to: 80, slide: 0.14, length: 0.18, volume: 0.035, filter: "lowpass", q: 1.4 }),
+    enemy: layered({ type: "triangle", from: 190, to: 70, slide: 0.09, length: 0.16, volume: 0.085 }, { type: "noise", from: 480, to: 110, slide: 0.12, length: 0.15, volume: 0.03, filter: "bandpass", q: 3 })
   };
-  if (kind === "heal") return layered({ type: "sine", from: 360, to: 720, slide: 0.14, length: 0.22, volume: 0.075 }, { type: "triangle", from: 540, to: 1080, slide: 0.16, length: 0.24, volume: 0.035, delay: 0.045 });
-  if (kind === "ability" && roleId === "tank") return layered({ type: "square", from: 150, to: 360, slide: 0.16, length: 0.26, volume: 0.13 }, { type: "sine", from: 75, to: 180, slide: 0.2, length: 0.3, volume: 0.07 });
-  if (kind === "ability" && roleId === "medic") return layered({ type: "sine", from: 300, to: 900, slide: 0.18, length: 0.26, volume: 0.08 }, { type: "triangle", from: 600, to: 1200, slide: 0.2, length: 0.3, volume: 0.035 });
+  if (kind === "heal") return triple({ type: "sine", from: 360, to: 720, slide: 0.14, length: 0.24, volume: 0.065 }, { type: "triangle", from: 540, to: 1080, slide: 0.16, length: 0.28, volume: 0.03, delay: 0.045 }, { type: "noise", from: 1400, to: 520, slide: 0.22, length: 0.24, volume: 0.018, filter: "bandpass", q: 4, delay: 0.02 });
+  if (kind === "ability" && roleId === "tank") return triple({ type: "triangle", from: 150, to: 360, slide: 0.16, length: 0.28, volume: 0.1 }, { type: "sine", from: 75, to: 180, slide: 0.2, length: 0.32, volume: 0.06 }, { type: "noise", from: 900, to: 180, slide: 0.18, length: 0.18, volume: 0.04, filter: "lowpass", q: 1.8 });
+  if (kind === "ability" && roleId === "medic") return triple({ type: "sine", from: 300, to: 900, slide: 0.18, length: 0.28, volume: 0.07 }, { type: "triangle", from: 600, to: 1200, slide: 0.2, length: 0.32, volume: 0.03 }, { type: "noise", from: 1600, to: 580, slide: 0.22, length: 0.24, volume: 0.018, filter: "bandpass", q: 4 });
+  if (kind === "ability" && roleId === "backliner") return triple({ type: "noise", from: 4200, to: 700, slide: 0.18, length: 0.24, volume: 0.09, filter: "bandpass", q: 10 }, { type: "sine", from: 1180, to: 720, slide: 0.1, length: 0.16, volume: 0.04, delay: 0.04 }, { type: "noise", from: 1800, to: 500, slide: 0.1, length: 0.12, volume: 0.035, filter: "bandpass", q: 8, delay: 0.14 });
+  if (kind === "ability" && roleId === "brawler") return layered({ type: "triangle", from: 160, to: 72, slide: 0.12, length: 0.22, volume: 0.12 }, { type: "noise", from: 520, to: 120, slide: 0.12, length: 0.2, volume: 0.055, filter: "lowpass", q: 1.1 });
+  if (kind === "ability" && roleId === "scout") return layered({ type: "sine", from: 620, to: 1240, slide: 0.08, length: 0.16, volume: 0.07 }, { type: "triangle", from: 1040, to: 1560, slide: 0.08, length: 0.14, volume: 0.04, delay: 0.05 });
+  if (kind === "ability" && roleId === "lordoran") return triple({ type: "sine", from: 120, to: 58, slide: 0.28, length: 0.42, volume: 0.11 }, { type: "triangle", from: 240, to: 96, slide: 0.24, length: 0.36, volume: 0.06 }, { type: "noise", from: 260, to: 50, slide: 0.28, length: 0.34, volume: 0.06, filter: "lowpass", q: 1 });
   if (kind === "attack") return attackProfiles[roleId] || { type: "triangle", from: 520, to: 240, slide: 0.09, length: 0.13, volume: 0.08 };
   if (kind === "hit") return hitProfiles[roleId] || { type: "square", from: 130, to: 70, slide: 0.08, length: 0.17, volume: 0.11 };
   return { type: "square", from: 130, to: 70, slide: 0.08, length: 0.17, volume: 0.11 };
@@ -1752,8 +1842,12 @@ function makeUnitCard(unit) {
 function makeFighter(unit) {
   const role = roleForUnit(unit);
   const combatEffect = combatEffectFor(unit);
+  const side = unitSide(unit);
+  const isActive = state.combat.activeId === unit.id;
+  const isTarget = state.combat.targetId === unit.id;
+  const isHealed = combatEffect?.kind === "heal";
   const token = document.createElement("article");
-  token.className = `fighter-token ${unit.rarity} ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
+  token.className = `fighter-token ${side ? `${side}-token` : ""} ${unit.rarity} ${unit.hp <= 0 ? "defeated" : ""} ${isActive ? "active" : ""} ${isTarget ? "target" : ""} ${isHealed ? "healed-token" : ""} ${isActive && state.combat.motion ? `${state.combat.motion}-motion ${state.combat.activeSide ? `${state.combat.activeSide}-motion` : ""}` : ""} ${isTarget && state.combat.motion ? `${state.combat.motion}-target` : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
   if (unit.eternalKey) token.classList.add(`eternal-${unit.eternalKey}`);
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -1776,19 +1870,55 @@ function makeFighter(unit) {
   stats.textContent = `HP ${Math.max(0, unit.hp)}  ${powerStatText(unit)}  ${levelStatText(unit)}`;
   token.append(canvas, badgeRow, name, hpbar, stats);
   if (abilityMeterMax(unit)) token.append(makeAbilityChargeMeter(unit));
+  const overlay = document.createElement("div");
+  overlay.className = "combat-overlay";
   if (combatEffect) {
+    if (combatEffect.visual) {
+      const visual = document.createElement("div");
+      visual.className = `effect-prop ${combatEffect.visual}-effect`;
+      visual.append(makeEffectIcon(combatEffect.visual));
+      visual.setAttribute("aria-hidden", "true");
+      overlay.append(visual);
+    }
     const damage = document.createElement("div");
     damage.className = `damage-pop ${combatEffect.kind}-pop`;
     damage.textContent = combatEffect.text;
-    token.append(damage);
+    overlay.append(damage);
   }
   if (state.combat.speech?.id === unit.id) {
     const speech = document.createElement("div");
     speech.className = "speech-bubble";
     speech.textContent = state.combat.speech.text;
-    token.append(speech);
+    overlay.append(speech);
   }
+  token.append(overlay);
   return token;
+}
+
+function makeEffectIcon(visual) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = effectIconMarkup(visual);
+  return svg;
+}
+
+function effectIconMarkup(visual) {
+  const icons = {
+    dagger: '<path d="M16 3l5 5-9 9-4-4 9-9z" fill="currentColor"/><path d="M7 14l3 3-4 4H3v-3l4-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 6l4 4" stroke="#0d1016" stroke-width="1.5" stroke-linecap="round"/>',
+    wisp: '<path d="M12 21c4-2 6-5 4-9-1-2-3-3-3-7-4 3-7 7-7 11 0 3 2 5 6 5z" fill="currentColor"/><path d="M10 17c2 0 4-1 4-3 0-1-.6-2-1.5-3-.2 2-2.5 3-2.5 5z" fill="#f6f2e8"/>',
+    shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6l7-3z" fill="currentColor"/><path d="M12 7v9M8.5 10.5h7" stroke="#0d1016" stroke-width="2" stroke-linecap="round"/>',
+    fist: '<path d="M6 11V7.5a1.5 1.5 0 0 1 3 0V11M9 11V6.5a1.5 1.5 0 0 1 3 0V11M12 11V7a1.5 1.5 0 0 1 3 0v4M15 11V8.5a1.5 1.5 0 0 1 3 0V13c0 4-2.5 7-6.5 7H10c-3 0-5-2-5-5v-2a2 2 0 0 1 2-2h11" fill="currentColor"/><path d="M7 14h9" stroke="#0d1016" stroke-width="2" stroke-linecap="round"/>',
+    crit: '<path d="M13 2L4 14h7l-1 8 10-13h-7l1-7z" fill="currentColor"/><path d="M11 14l-1 3" stroke="#0d1016" stroke-width="1.5" stroke-linecap="round"/>',
+    girth: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M3 12h3M18 12h3M12 3v3M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    stun: '<path d="M12 2l2.4 6.4 6.6.4-5.1 4.2 1.7 6.5L12 16l-5.6 3.5 1.7-6.5L3 8.8l6.6-.4L12 2z" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="#0d1016"/>',
+    curse: '<path d="M5 5l6 3 3-5 5 6-4 3 4 5-6 2-3-4-5 4 2-7-4-3 2-4z" fill="currentColor"/><path d="M9 10h.1M15 10h.1M10 15c1.2-.8 2.8-.8 4 0" stroke="#f6f2e8" stroke-width="2" stroke-linecap="round"/>',
+    recoil: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>',
+    claw: '<path d="M6 4c-1 5-1 10 0 16M12 3c-1.5 5.5-1.5 11 0 18M18 4c-1 5-1 10 0 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
+    strike: '<path d="M4 13l8-9-2 7h8l-8 9 2-7H4z" fill="currentColor"/>',
+    charge: '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="3"/><path d="M12 6v6l4 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+  };
+  return icons[visual] || icons.strike;
 }
 
 function powerStatText(unit) {
