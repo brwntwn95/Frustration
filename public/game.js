@@ -1,4 +1,4 @@
-const appVersion = "v0.1.2";
+const appVersion = "v0.1.4";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -25,7 +25,7 @@ const classRoles = [
   { id: "snack", label: "Snack Pact", color: "#ffb26b", hp: 1, atk: 0, spd: 0, description: "Feeds Lordoran when hired, giving him +1 attack." },
   { id: "backliner", label: "Backliner", color: "#a46cff", hp: -1, atk: 1, spd: 1, description: "Assassin role. After attacking, clips the farthest enemy for 1 extra damage." },
   { id: "collector", label: "Collector", color: "#f1c44e", hp: 0, atk: 0, spd: 0, description: "Adds 1 coin when hired and improves post-fight coin rewards." },
-  { id: "medic", label: "Medic", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals instead of attacking. Every 3rd round heals the whole team." },
+  { id: "medic", label: "Medic", color: "#72d68b", hp: 1, atk: -1, spd: 0, description: "Heals instead of attacking. Team heal charge gets faster at higher rarities." },
   { id: "brawler", label: "Brawler", color: "#f06a6a", hp: 2, atk: 1, spd: -1, description: "Bruiser role. Gains +1 attack after landing a hit." },
   { id: "lordoran", label: "Lordoran", color: "#b9fff4", hp: 0, atk: 0, spd: 0, description: "Main character: cannot be sold and grows rounder with every win." },
   { id: "enemy", label: "Enemy", color: "#f06a6a", hp: 0, atk: 0, spd: 0, description: "Hostile unit on the branch." }
@@ -34,6 +34,12 @@ const classRoles = [
 const roleById = Object.fromEntries(classRoles.map((role) => [role.id, role]));
 const recruitRoles = classRoles.filter((role) => !["lordoran", "enemy"].includes(role.id));
 const tankChargeMax = 3;
+const medicChargeCosts = {
+  common: 4,
+  rare: 3,
+  legendary: 2,
+  eternal: 1
+};
 
 const eternalHeroes = [
   {
@@ -94,6 +100,7 @@ const state = {
   stage: 1,
   coins: 10,
   threat: 0,
+  currentRound: 0,
   earnedCoins: 0,
   levelsCleared: 0,
   currentScore: 0,
@@ -133,6 +140,8 @@ const els = {
   stageText: document.querySelector("#stageText"),
   coinText: document.querySelector("#coinText"),
   threatText: document.querySelector("#threatText"),
+  threatStat: document.querySelector("#threatStat"),
+  roundText: document.querySelector("#roundText"),
   scoreText: document.querySelector("#scoreText"),
   teamCount: document.querySelector("#teamCount"),
   teamList: document.querySelector("#teamList"),
@@ -231,6 +240,7 @@ function makeHero(stage = state.stage, bonus = 0, reservedEternals = new Set()) 
     atk: Math.max(1, 2 + Math.floor(stage / 2) + stat + role.atk + Math.floor(rnd() * 3)),
     spd: Math.max(0, 1 + speedBias + Math.floor(stat / 2) + role.spd),
     tankCharge: role.id === "tank" ? 0 : undefined,
+    medicCharge: role.id === "medic" ? 0 : undefined,
     seed,
     type: "hero"
   };
@@ -254,6 +264,7 @@ function makeEternalHero(rnd = Math.random, reservedEternals = new Set()) {
     atk: preset.atk,
     spd: preset.spd,
     tankCharge: preset.role === "tank" ? 0 : undefined,
+    medicCharge: preset.role === "medic" ? 0 : undefined,
     stunnedTurns: 0,
     seed: preset.seed,
     type: "hero"
@@ -409,6 +420,7 @@ function resetRunState(options = {}) {
   state.stage = 1;
   state.coins = 10;
   state.threat = 0;
+  state.currentRound = 0;
   state.earnedCoins = 0;
   state.levelsCleared = 0;
   state.currentScore = 0;
@@ -471,6 +483,7 @@ function startRoute(route) {
 
 function startBattle(elite = false) {
   state.phase = "battle";
+  state.currentRound = 0;
   state.battleToken += 1;
   const token = state.battleToken;
   const count = enemyCount(elite);
@@ -492,9 +505,12 @@ function startBattle(elite = false) {
 
 function enemyDifficulty(elite = false) {
   const partyBonus = Math.max(0, state.team.length - 1) * 0.35;
-  const threatBonus = state.threat * 0.35;
   const eliteBonus = elite ? 1.25 : 0;
-  return Math.max(1, state.stage * 0.72 + partyBonus + threatBonus + eliteBonus);
+  return Math.max(1, state.stage * 0.72 + partyBonus + enemyThreatBonus() + eliteBonus);
+}
+
+function enemyThreatBonus() {
+  return state.threat * 0.35;
 }
 
 function enemyCount(elite = false) {
@@ -507,6 +523,7 @@ async function playBattle(elite = false, token = state.battleToken) {
   let round = 1;
 
   while (token === state.battleToken && living(state.team).length && living(state.enemies).length && round < 30) {
+    state.currentRound = round;
     pushLog(`Round ${round}`);
     state.combat.effects = [];
     state.combat.tauntId = null;
@@ -521,11 +538,13 @@ async function playBattle(elite = false, token = state.battleToken) {
       if (actor.side === "ally" && !await resolveEternalTurnStart(unit, token)) continue;
 
       if (actor.side === "ally" && unitHasRole(unit, "medic")) {
-        if (round % 3 === 0) {
+        chargeMedic(unit);
+        if (medicCharge(unit) >= medicChargeMax(unit)) {
           const teamHeals = living(state.team)
-            .map((target) => ({ target, amount: medicHealAmount(target) }))
+            .map((target) => ({ target, amount: medicHealAmount(target, unit) }))
             .filter((heal) => heal.amount > 0);
           if (teamHeals.length) {
+            unit.medicCharge = 0;
             const total = teamHeals.reduce((sum, heal) => sum + heal.amount, 0);
             state.combat.activeId = unit.id;
             state.combat.targetId = unit.id;
@@ -549,7 +568,7 @@ async function playBattle(elite = false, token = state.battleToken) {
         }
         const healTarget = weakestLivingAlly();
         if (healTarget) {
-          const amount = medicHealAmount(healTarget);
+          const amount = medicHealAmount(healTarget, unit);
           state.combat.activeId = unit.id;
           state.combat.targetId = healTarget.id;
           state.combat.damage = "";
@@ -645,6 +664,7 @@ function finishBattle(won, elite = false) {
   state.combat.effects = [];
   state.combat.tauntId = null;
   state.combat.locked = false;
+  state.currentRound = 0;
   if (won) {
     const bonusCoins = state.team.filter((unit) => unitHasRole(unit, "collector")).length;
     const coins = 5 + state.stage + (elite ? 6 : 0) + bonusCoins;
@@ -694,6 +714,18 @@ function chargeTank(unit) {
   if (unit.tankCharge >= tankChargeMax) {
     pushLog(`${unit.name}'s guard is fully charged.`);
   }
+}
+
+function medicCharge(unit) {
+  return Math.max(0, Math.min(medicChargeMax(unit), unit.medicCharge || 0));
+}
+
+function chargeMedic(unit) {
+  unit.medicCharge = Math.min(medicChargeMax(unit), medicCharge(unit) + 1);
+}
+
+function medicChargeMax(unit) {
+  return medicChargeCosts[unit.rarity] || medicChargeCosts.common;
 }
 
 async function resolveEternalTurnStart(unit, token) {
@@ -766,9 +798,13 @@ function weakestLivingAlly() {
   return [...allies].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
 }
 
-function medicHealAmount(target) {
+function medicHealPower(unit) {
+  return Math.max(1, unit.atk);
+}
+
+function medicHealAmount(target, healer) {
   const missingHp = Math.max(0, target.maxHp - Math.max(0, target.hp));
-  const baseHeal = Math.max(2, Math.ceil(target.maxHp * 0.18));
+  const baseHeal = medicHealPower(healer);
   return Math.min(baseHeal, missingHp);
 }
 
@@ -817,38 +853,46 @@ function playSound(kind, roleId = "") {
   const audio = getAudioContext();
   if (!audio) return;
   const now = audio.currentTime;
+  const profile = soundProfile(kind, roleId);
+  const layers = profile.layers || [profile];
+  layers.forEach((layer) => playTone(audio, now, layer));
+}
+
+function playTone(audio, now, layer) {
   const osc = audio.createOscillator();
   const gain = audio.createGain();
   osc.connect(gain);
   gain.connect(audio.destination);
-
-  const profile = soundProfile(kind, roleId);
-  osc.type = profile.type;
-  osc.frequency.setValueAtTime(profile.from, now);
-  osc.frequency.exponentialRampToValueAtTime(profile.to, now + profile.slide);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(profile.volume, now + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + profile.length);
-  osc.start(now);
-  osc.stop(now + profile.length + 0.02);
+  const delay = layer.delay || 0;
+  const start = now + delay;
+  osc.type = layer.type;
+  osc.frequency.setValueAtTime(layer.from, start);
+  osc.frequency.exponentialRampToValueAtTime(layer.to, start + layer.slide);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(layer.volume, start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + layer.length);
+  osc.start(start);
+  osc.stop(start + layer.length + 0.02);
 }
 
 function soundProfile(kind, roleId) {
+  const layered = (base, accent) => ({ layers: [base, accent] });
   const attackProfiles = {
-    brawler: { type: "square", from: 180, to: 82, slide: 0.1, length: 0.16, volume: 0.12 },
-    backliner: { type: "sawtooth", from: 760, to: 310, slide: 0.07, length: 0.12, volume: 0.07 },
-    scout: { type: "triangle", from: 680, to: 420, slide: 0.06, length: 0.1, volume: 0.07 },
-    tank: { type: "square", from: 240, to: 160, slide: 0.12, length: 0.18, volume: 0.09 },
-    lordoran: { type: "triangle", from: 420, to: 210, slide: 0.11, length: 0.16, volume: 0.1 }
+    brawler: layered({ type: "square", from: 180, to: 82, slide: 0.1, length: 0.16, volume: 0.12 }, { type: "triangle", from: 92, to: 58, slide: 0.11, length: 0.18, volume: 0.06 }),
+    backliner: layered({ type: "sawtooth", from: 860, to: 310, slide: 0.07, length: 0.12, volume: 0.07 }, { type: "triangle", from: 1220, to: 760, slide: 0.04, length: 0.08, volume: 0.035, delay: 0.035 }),
+    scout: layered({ type: "triangle", from: 680, to: 420, slide: 0.06, length: 0.1, volume: 0.07 }, { type: "sine", from: 920, to: 680, slide: 0.05, length: 0.08, volume: 0.035, delay: 0.03 }),
+    tank: layered({ type: "square", from: 240, to: 160, slide: 0.12, length: 0.18, volume: 0.09 }, { type: "sine", from: 120, to: 90, slide: 0.16, length: 0.22, volume: 0.06 }),
+    lordoran: layered({ type: "triangle", from: 420, to: 210, slide: 0.11, length: 0.16, volume: 0.1 }, { type: "sine", from: 260, to: 130, slide: 0.12, length: 0.18, volume: 0.05 })
   };
   const hitProfiles = {
-    brawler: { type: "square", from: 120, to: 54, slide: 0.09, length: 0.17, volume: 0.13 },
-    backliner: { type: "triangle", from: 520, to: 180, slide: 0.08, length: 0.13, volume: 0.09 },
-    tank: { type: "square", from: 160, to: 90, slide: 0.12, length: 0.18, volume: 0.11 },
-    enemy: { type: "sawtooth", from: 190, to: 70, slide: 0.09, length: 0.16, volume: 0.09 }
+    brawler: layered({ type: "square", from: 120, to: 54, slide: 0.09, length: 0.17, volume: 0.13 }, { type: "sine", from: 62, to: 38, slide: 0.12, length: 0.2, volume: 0.06 }),
+    backliner: layered({ type: "triangle", from: 620, to: 180, slide: 0.08, length: 0.13, volume: 0.09 }, { type: "sawtooth", from: 950, to: 460, slide: 0.05, length: 0.08, volume: 0.035 }),
+    tank: layered({ type: "square", from: 160, to: 90, slide: 0.12, length: 0.18, volume: 0.11 }, { type: "sine", from: 90, to: 55, slide: 0.16, length: 0.2, volume: 0.05 }),
+    enemy: layered({ type: "sawtooth", from: 190, to: 70, slide: 0.09, length: 0.16, volume: 0.09 }, { type: "square", from: 95, to: 48, slide: 0.12, length: 0.18, volume: 0.04 })
   };
-  if (kind === "heal") return { type: "sine", from: 360, to: 720, slide: 0.14, length: 0.22, volume: 0.075 };
-  if (kind === "ability" && roleId === "tank") return { type: "square", from: 150, to: 360, slide: 0.16, length: 0.26, volume: 0.13 };
+  if (kind === "heal") return layered({ type: "sine", from: 360, to: 720, slide: 0.14, length: 0.22, volume: 0.075 }, { type: "triangle", from: 540, to: 1080, slide: 0.16, length: 0.24, volume: 0.035, delay: 0.045 });
+  if (kind === "ability" && roleId === "tank") return layered({ type: "square", from: 150, to: 360, slide: 0.16, length: 0.26, volume: 0.13 }, { type: "sine", from: 75, to: 180, slide: 0.2, length: 0.3, volume: 0.07 });
+  if (kind === "ability" && roleId === "medic") return layered({ type: "sine", from: 300, to: 900, slide: 0.18, length: 0.26, volume: 0.08 }, { type: "triangle", from: 600, to: 1200, slide: 0.2, length: 0.3, volume: 0.035 });
   if (kind === "attack") return attackProfiles[roleId] || { type: "triangle", from: 520, to: 240, slide: 0.09, length: 0.13, volume: 0.08 };
   if (kind === "hit") return hitProfiles[roleId] || { type: "square", from: 130, to: 70, slide: 0.08, length: 0.17, volume: 0.11 };
   return { type: "square", from: 130, to: 70, slide: 0.08, length: 0.17, volume: 0.11 };
@@ -1021,6 +1065,8 @@ function render() {
   els.stageText.textContent = state.stage;
   els.coinText.textContent = state.coins;
   els.threatText.textContent = Number.isInteger(state.threat) ? state.threat : state.threat.toFixed(1);
+  els.threatStat.title = `Threat adds ${enemyThreatBonus().toFixed(1)} enemy difficulty. It rises after elite fights and long runs.`;
+  els.roundText.textContent = state.currentRound || "-";
   els.scoreText.textContent = state.currentScore;
   els.versionBadge.textContent = appVersion;
   els.teamCount.textContent = `${state.team.length}/5`;
@@ -1377,9 +1423,9 @@ function makeUnitCard(unit) {
   classSlot.className = "class-slot";
   classSlot.textContent = "";
   classSlot.append(makeRoleBadge(role, "", unit.trait));
-  if (unitHasRole(unit, "tank")) classSlot.append(makeTankChargeMeter(unit));
+  if (unitHasRole(unit, "tank") || unitHasRole(unit, "medic")) classSlot.append(makeAbilityChargeMeter(unit));
   node.querySelector(".hp").textContent = `HP ${Math.max(0, unit.hp)}/${unit.maxHp}`;
-  node.querySelector(".atk").textContent = `ATK ${unit.atk}`;
+  node.querySelector(".atk").textContent = powerStatText(unit);
   node.querySelector(".spd").textContent = `SPD ${unit.spd}`;
   drawSprite(node.querySelector("canvas"), unit);
   return node;
@@ -1405,9 +1451,9 @@ function makeFighter(unit) {
   hpbar.append(fill);
   const stats = document.createElement("div");
   stats.className = "token-stats";
-  stats.textContent = `HP ${Math.max(0, unit.hp)}  ATK ${unit.atk}`;
+  stats.textContent = `HP ${Math.max(0, unit.hp)}  ${powerStatText(unit)}`;
   token.append(canvas, roleBadge, name, hpbar, stats);
-  if (unitHasRole(unit, "tank")) token.append(makeTankChargeMeter(unit));
+  if (unitHasRole(unit, "tank") || unitHasRole(unit, "medic")) token.append(makeAbilityChargeMeter(unit));
   if (combatEffect) {
     const damage = document.createElement("div");
     damage.className = `damage-pop ${combatEffect.kind}-pop`;
@@ -1417,13 +1463,22 @@ function makeFighter(unit) {
   return token;
 }
 
-function makeTankChargeMeter(unit) {
+function powerStatText(unit) {
+  return unitHasRole(unit, "medic")
+    ? `HEAL ${medicHealPower(unit)}`
+    : `ATK ${unit.atk}`;
+}
+
+function makeAbilityChargeMeter(unit) {
+  const isMedic = unitHasRole(unit, "medic");
+  const max = isMedic ? medicChargeMax(unit) : tankChargeMax;
+  const current = isMedic ? medicCharge(unit) : tankCharge(unit);
   const meter = document.createElement("div");
-  meter.className = "tank-charge";
-  meter.setAttribute("aria-label", `Guard charge ${tankCharge(unit)} of ${tankChargeMax}`);
-  for (let index = 0; index < tankChargeMax; index += 1) {
+  meter.className = `ability-charge ${isMedic ? "medic-charge" : "tank-charge"}`;
+  meter.setAttribute("aria-label", `${isMedic ? "Team heal" : "Guard"} charge ${current} of ${max}`);
+  for (let index = 0; index < max; index += 1) {
     const pip = document.createElement("span");
-    if (index < tankCharge(unit)) pip.className = "filled";
+    if (index < current) pip.className = "filled";
     meter.append(pip);
   }
   return meter;
