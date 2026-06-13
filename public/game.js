@@ -1,4 +1,4 @@
-const appVersion = "v0.1.18";
+const appVersion = "v0.1.19";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -1872,6 +1872,13 @@ function makeFighter(unit) {
   if (abilityMeterMax(unit)) token.append(makeAbilityChargeMeter(unit));
   const overlay = document.createElement("div");
   overlay.className = "combat-overlay";
+  if (isActive && state.combat.motion === "dagger") {
+    const projectile = document.createElement("div");
+    projectile.className = `combat-projectile dagger-projectile ${side === "enemy" ? "enemy-projectile" : "ally-projectile"}`;
+    projectile.append(makeEffectIcon("dagger"));
+    projectile.setAttribute("aria-hidden", "true");
+    overlay.append(projectile);
+  }
   if (combatEffect) {
     if (combatEffect.visual) {
       const visual = document.createElement("div");
@@ -1905,18 +1912,18 @@ function makeEffectIcon(visual) {
 
 function effectIconMarkup(visual) {
   const icons = {
-    dagger: '<path d="M16 3l5 5-9 9-4-4 9-9z" fill="currentColor"/><path d="M7 14l3 3-4 4H3v-3l4-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 6l4 4" stroke="#0d1016" stroke-width="1.5" stroke-linecap="round"/>',
-    wisp: '<path d="M12 21c4-2 6-5 4-9-1-2-3-3-3-7-4 3-7 7-7 11 0 3 2 5 6 5z" fill="currentColor"/><path d="M10 17c2 0 4-1 4-3 0-1-.6-2-1.5-3-.2 2-2.5 3-2.5 5z" fill="#f6f2e8"/>',
-    shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6l7-3z" fill="currentColor"/><path d="M12 7v9M8.5 10.5h7" stroke="#0d1016" stroke-width="2" stroke-linecap="round"/>',
-    fist: '<path d="M6 11V7.5a1.5 1.5 0 0 1 3 0V11M9 11V6.5a1.5 1.5 0 0 1 3 0V11M12 11V7a1.5 1.5 0 0 1 3 0v4M15 11V8.5a1.5 1.5 0 0 1 3 0V13c0 4-2.5 7-6.5 7H10c-3 0-5-2-5-5v-2a2 2 0 0 1 2-2h11" fill="currentColor"/><path d="M7 14h9" stroke="#0d1016" stroke-width="2" stroke-linecap="round"/>',
-    crit: '<path d="M13 2L4 14h7l-1 8 10-13h-7l1-7z" fill="currentColor"/><path d="M11 14l-1 3" stroke="#0d1016" stroke-width="1.5" stroke-linecap="round"/>',
-    girth: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M3 12h3M18 12h3M12 3v3M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-    stun: '<path d="M12 2l2.4 6.4 6.6.4-5.1 4.2 1.7 6.5L12 16l-5.6 3.5 1.7-6.5L3 8.8l6.6-.4L12 2z" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="#0d1016"/>',
-    curse: '<path d="M5 5l6 3 3-5 5 6-4 3 4 5-6 2-3-4-5 4 2-7-4-3 2-4z" fill="currentColor"/><path d="M9 10h.1M15 10h.1M10 15c1.2-.8 2.8-.8 4 0" stroke="#f6f2e8" stroke-width="2" stroke-linecap="round"/>',
-    recoil: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>',
-    claw: '<path d="M6 4c-1 5-1 10 0 16M12 3c-1.5 5.5-1.5 11 0 18M18 4c-1 5-1 10 0 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
-    strike: '<path d="M4 13l8-9-2 7h8l-8 9 2-7H4z" fill="currentColor"/>',
-    charge: '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="3"/><path d="M12 6v6l4 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    dagger: '<path d="M15.8 2.8l5.4 5.4-8.7 8.8-4.4-4.4 8.8-8.7-1.1-1.1z" fill="currentColor"/><path d="M6.9 14.2l2.9 2.9-4.1 4.1H2.8v-2.9l4.1-4.1z" fill="currentColor"/><path d="M14.7 6.2l3.1 3.1M8.7 12.2l3.1 3.1" stroke="#11151d" stroke-width="1.6" stroke-linecap="round"/>',
+    wisp: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 7v10M7 12h10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M5 5v3M3.5 6.5h3M19 16v3M17.5 17.5h3" stroke="#b9fff4" stroke-width="1.7" stroke-linecap="round"/>',
+    shield: '<path d="M12 2.8l7.2 3.1v5.2c0 5.2-3 8.4-7.2 10.2-4.2-1.8-7.2-5-7.2-10.2V5.9L12 2.8z" fill="currentColor"/><path d="M12 7.1v9.1M8.2 10.9h7.6" stroke="#11151d" stroke-width="2.2" stroke-linecap="round"/>',
+    fist: '<path d="M6 10.6V7.2a1.6 1.6 0 0 1 3.2 0v3.4M9.2 10.6V6.2a1.6 1.6 0 0 1 3.2 0v4.4M12.4 10.6V7a1.6 1.6 0 0 1 3.2 0v3.6M15.6 10.6V8.5a1.6 1.6 0 0 1 3.2 0v4.4c0 4.5-2.7 7.2-6.8 7.2h-1.8c-3.2 0-5.4-2.1-5.4-5.4v-2.1a2 2 0 0 1 2-2h12" fill="currentColor"/><path d="M7.3 14.1h9.2" stroke="#11151d" stroke-width="2" stroke-linecap="round"/>',
+    crit: '<path d="M12.8 2.4L4.2 13.8h6.4l-1 7.8 10.2-13h-6.4l-.6-6.2z" fill="currentColor"/><path d="M11.6 13.7l-.5 3.2" stroke="#11151d" stroke-width="1.6" stroke-linecap="round"/>',
+    girth: '<circle cx="12" cy="12" r="8.3" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="8.2" cy="9.2" r="1.8" fill="currentColor"/><circle cx="12" cy="7.6" r="1.9" fill="currentColor"/><circle cx="15.8" cy="9.2" r="1.8" fill="currentColor"/><path d="M8.2 15.4c1-2.3 2.1-3.5 3.8-3.5s2.8 1.2 3.8 3.5c.5 1.2-.2 2.1-1.5 2.1H9.7c-1.3 0-2-.9-1.5-2.1z" fill="currentColor"/>',
+    stun: '<path d="M12 2.7l2.1 5.7 6.1.4-4.7 3.9 1.5 6-5-3.2-5 3.2 1.5-6-4.7-3.9 6.1-.4L12 2.7z" fill="currentColor"/><path d="M9.2 11.1h5.6" stroke="#11151d" stroke-width="1.7" stroke-linecap="round"/>',
+    curse: '<path d="M7.2 5.2l4.8 2.4 4.8-2.4 2.7 5-2 5.3-5.5 4-5.5-4-2-5.3 2.7-5z" fill="currentColor"/><path d="M9 11h.1M15 11h.1M9.6 15c1.5-.9 3.3-.9 4.8 0" stroke="#f6f2e8" stroke-width="2" stroke-linecap="round"/>',
+    recoil: '<path d="M7 4.5l10 15M17 4.5l-10 15" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/><path d="M4.7 8.3C6.1 5.2 8.8 3.5 12 3.5c4.7 0 8.5 3.8 8.5 8.5 0 3.2-1.8 6-4.5 7.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    claw: '<path d="M7.2 4.2C5.4 8.7 5 14 5.8 19.8M12.6 3.4c-1.6 5.1-1.9 10.8-1 17.2M18 5.2c-1.7 3.8-2.1 8.3-1.3 13.6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M5.5 16.7l3.3-1.5M11.4 17.2l3.6-1.5M16.3 15.2l2.7-1.1" stroke="#f6f2e8" stroke-width="1.2" stroke-linecap="round"/>',
+    strike: '<path d="M16.7 3.2l4.1 4.1-9.9 9.9-4.1-4.1 9.9-9.9z" fill="currentColor"/><path d="M5.4 14.5l4.1 4.1-2.3 2.3H3.1v-4.1l2.3-2.3z" fill="currentColor"/><path d="M15.5 6l2.5 2.5" stroke="#11151d" stroke-width="1.5" stroke-linecap="round"/>',
+    charge: '<circle cx="12" cy="12" r="7.4" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M12 6.5v5.8l4.1 2.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
   };
   return icons[visual] || icons.strike;
 }
@@ -2027,15 +2034,15 @@ function makeRoleIcon(roleId) {
 
 function roleIconMarkup(roleId) {
   const icons = {
-    scout: '<path d="M4 13h10l-3-4 8 3-8 3 3-4H4z" fill="currentColor"/><path d="M5 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-    tank: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6l7-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 7v9M8.5 10h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-    snack: '<path d="M12 7c4 0 6 3 5 7-1 5-4 7-5 5-1 2-4 0-5-5-1-4 1-7 5-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 7c0-3 2-4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-    backliner: '<path d="M15 3l6 6-8 8-3-3 8-8-3-3z" fill="currentColor"/><path d="M8 13l3 3-4 4H4v-3l4-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
-    collector: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v10M15 9.5c-.8-1-2.2-1.3-3.4-.8-1.4.6-1.4 2.4.1 2.9l1.4.5c1.7.6 1.6 2.7-.1 3.2-1.3.4-2.8 0-3.7-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-    medic: '<rect x="5" y="5" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
-    brawler: '<path d="M6 10V7.5a1.5 1.5 0 0 1 3 0V10M9 10V6.5a1.5 1.5 0 0 1 3 0V10M12 10V7a1.5 1.5 0 0 1 3 0v3M15 10V8.5a1.5 1.5 0 0 1 3 0V13c0 4-2.5 7-6.5 7H10c-3 0-5-2-5-5v-3a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
-    lordoran: '<path d="M6 9L4 5l4 2a8 8 0 0 1 8 0l4-2-2 4c1 1.2 1.5 2.6 1.5 4 0 4-3.4 7-7.5 7S4.5 17 4.5 13c0-1.4.5-2.8 1.5-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12h.1M15 12h.1M10 16c1.2.8 2.8.8 4 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-    enemy: '<path d="M7 20v-3c-2-1.2-3-3.2-3-5.5C4 7 7.5 4 12 4s8 3 8 7.5c0 2.3-1 4.3-3 5.5v3H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 11h.1M15 11h.1M10 16h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+    scout: '<path d="M3.5 12.5h9.4l-2.5-3.2 9.9 3.7-9.9 3.7 2.5-3.2H3.5z" fill="currentColor"/><path d="M5.2 18.3h6.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    tank: '<path d="M12 2.8l7.2 3.1v5.2c0 5.2-3 8.4-7.2 10.2-4.2-1.8-7.2-5-7.2-10.2V5.9L12 2.8z" fill="currentColor"/><path d="M12 7.1v9.1M8.2 10.9h7.6" stroke="#11151d" stroke-width="2.1" stroke-linecap="round"/>',
+    snack: '<path d="M12 7.1c4.1 0 6.3 3.1 5.2 7.2-1.2 4.8-4.1 6.5-5.2 4.7-1.1 1.8-4 0.1-5.2-4.7C5.7 10.2 7.9 7.1 12 7.1z" fill="currentColor"/><path d="M12.1 7.2c0-3 1.9-4.3 4.4-4.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+    backliner: '<path d="M15.8 2.9l5.3 5.3-8.7 8.7-4.2-4.2 8.7-8.7-1.1-1.1z" fill="currentColor"/><path d="M7 14.2l2.8 2.8-4 4H3v-2.8l4-4z" fill="currentColor"/>',
+    collector: '<circle cx="12" cy="12" r="8.2" fill="currentColor"/><path d="M12 6.8v10.4M15.1 9.3c-.9-.9-2.2-1.2-3.4-.7-1.5.6-1.4 2.3.1 2.8l1.5.5c1.8.6 1.6 2.8-.2 3.4-1.3.4-2.9 0-3.8-1" fill="none" stroke="#11151d" stroke-width="1.8" stroke-linecap="round"/>',
+    medic: '<rect x="4.6" y="4.6" width="14.8" height="14.8" rx="3.4" fill="currentColor"/><path d="M12 7.7v8.6M7.7 12h8.6" stroke="#11151d" stroke-width="2.8" stroke-linecap="round"/>',
+    brawler: '<path d="M6 10.6V7.2a1.6 1.6 0 0 1 3.2 0v3.4M9.2 10.6V6.2a1.6 1.6 0 0 1 3.2 0v4.4M12.4 10.6V7a1.6 1.6 0 0 1 3.2 0v3.6M15.6 10.6V8.5a1.6 1.6 0 0 1 3.2 0v4.4c0 4.5-2.7 7.2-6.8 7.2h-1.8c-3.2 0-5.4-2.1-5.4-5.4v-2.1a2 2 0 0 1 2-2h12" fill="currentColor"/><path d="M7.3 14.1h9.2" stroke="#11151d" stroke-width="2" stroke-linecap="round"/>',
+    lordoran: '<path d="M6.1 9.1L4.2 5l4 2.1a8 8 0 0 1 7.6 0l4-2.1-1.9 4.1c1.1 1.2 1.6 2.6 1.6 4.2 0 4.1-3.4 7.1-7.5 7.1s-7.5-3-7.5-7.1c0-1.6.5-3 1.6-4.2z" fill="currentColor"/><path d="M9 12h.1M15 12h.1M10 16c1.2.8 2.8.8 4 0" stroke="#11151d" stroke-width="2" stroke-linecap="round"/>',
+    enemy: '<path d="M7 20v-3c-2-1.2-3-3.2-3-5.5C4 7 7.5 4 12 4s8 3 8 7.5c0 2.3-1 4.3-3 5.5v3H7z" fill="currentColor"/><path d="M9 11h.1M15 11h.1M10 16h4" stroke="#11151d" stroke-width="2" stroke-linecap="round"/>'
   };
   return icons[roleId] || icons.scout;
 }

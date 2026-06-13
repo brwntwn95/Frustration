@@ -572,9 +572,14 @@ h1 {
 }
 
 .fighter-token.active {
+  z-index: 30;
   border-color: var(--green);
   box-shadow: 0 0 0 2px rgba(114, 214, 139, 0.26), 0 14px 24px rgba(0, 0, 0, 0.25);
   transform: translateY(-6px);
+}
+
+.fighter-token.dagger-motion {
+  z-index: 42;
 }
 
 .fighter-token.attack-motion {
@@ -829,44 +834,118 @@ h1 {
 }
 
 .dagger-effect {
-  color: #f6f2e8;
-  background: linear-gradient(135deg, #dfe7ff, #a46cff 58%, #2d3340);
-  border-radius: 8px 999px 999px 8px;
-  animation: spinningBlade 980ms ease both;
+  width: 38px;
+  height: 38px;
+  color: #dfe7ff;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  filter: drop-shadow(0 0 8px rgba(164, 108, 255, 0.72));
+  animation: daggerStick 1020ms ease both;
+}
+
+.dagger-effect svg {
+  width: 34px;
+  height: 34px;
+  transform: rotate(38deg);
+}
+
+.combat-projectile {
+  position: absolute;
+  left: 50%;
+  top: 42px;
+  z-index: 22;
+  width: 34px;
+  height: 34px;
+  color: #dfe7ff;
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px rgba(164, 108, 255, 0.76));
+}
+
+.combat-projectile svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  color: inherit;
+}
+
+.dagger-projectile.ally-projectile {
+  animation: daggerThrowRight 900ms ease both;
+}
+
+.dagger-projectile.enemy-projectile {
+  animation: daggerThrowLeft 900ms ease both;
 }
 
 .wisp-effect {
-  color: #0d1016;
-  background: radial-gradient(circle, #f6f2e8 0 18%, #72d68b 48%, rgba(114, 214, 139, 0) 72%);
-  border-color: rgba(114, 214, 139, 0.84);
+  color: #f6f2e8;
+  background: radial-gradient(circle, #72d68b 0 38%, #1c7f43 64%, rgba(114, 214, 139, 0.08) 82%);
+  border-color: rgba(185, 255, 244, 0.88);
+  box-shadow: 0 0 0 3px rgba(114, 214, 139, 0.16), 0 12px 22px rgba(0, 0, 0, 0.35), 0 0 22px rgba(114, 214, 139, 0.54);
   animation: healingWisp 960ms ease both;
 }
 
 .shield-effect {
-  color: #0d1016;
-  background: linear-gradient(160deg, #dfe7ff, #4aa3ff);
+  color: #dfe7ff;
+  background: linear-gradient(160deg, #1c6fba, #4aa3ff);
+  border-color: rgba(223, 231, 255, 0.9);
   border-radius: 10px 10px 16px 16px;
   animation: shieldBurst 880ms ease both;
 }
 
 .fist-effect {
-  color: #0d1016;
+  color: #f6f2e8;
   background: linear-gradient(135deg, #f6f2e8, #f06a6a);
+  border-color: rgba(240, 106, 106, 0.85);
   animation: fistBurst 780ms ease both;
 }
 
 .crit-effect {
-  color: #0d1016;
-  background: linear-gradient(135deg, #f6f2e8, #7bdff2);
+  color: #fff6a8;
+  background: linear-gradient(135deg, #1b2432, #2e8ca3);
+  border-color: rgba(123, 223, 242, 0.86);
   animation: critFlash 860ms ease both;
 }
 
 .girth-effect {
-  color: #0d1016;
+  color: #f6f2e8;
   width: 42px;
   height: 42px;
-  background: radial-gradient(circle, #f6f2e8 0 18%, #b9fff4 42%, rgba(185, 255, 244, 0.2) 68%);
+  background: radial-gradient(circle, #0d1016 0 30%, #2b8c85 54%, rgba(185, 255, 244, 0.22) 74%);
+  border-color: rgba(185, 255, 244, 0.92);
   animation: girthPulse 1040ms ease both;
+}
+
+.stun-effect {
+  color: #fff6a8;
+  background: linear-gradient(135deg, #312b16, #cfb64c);
+  border-color: rgba(255, 246, 168, 0.86);
+}
+
+.curse-effect {
+  color: #f6f2e8;
+  background: linear-gradient(135deg, #3b1b5f, #a46cff);
+  border-color: rgba(164, 108, 255, 0.88);
+}
+
+.recoil-effect {
+  color: #f6f2e8;
+  background: linear-gradient(135deg, #3a151a, #f06a6a);
+  border-color: rgba(240, 106, 106, 0.9);
+}
+
+.claw-effect,
+.strike-effect {
+  color: #f6f2e8;
+  background: linear-gradient(135deg, #222937, #f06a6a);
+  border-color: rgba(246, 242, 232, 0.76);
+}
+
+.charge-effect {
+  color: #b9fff4;
+  background: linear-gradient(135deg, #122f34, #267d86);
+  border-color: rgba(185, 255, 244, 0.86);
 }
 
 .stun-effect,
@@ -1750,25 +1829,67 @@ h1 {
   }
 }
 
-@keyframes spinningBlade {
+@keyframes daggerThrowRight {
   0% {
     opacity: 0;
-    transform: translate(-145%, -90%) rotate(-220deg) scale(0.62);
+    transform: translate(-50%, -50%) translateX(0) rotate(-48deg) scale(0.68);
   }
 
-  48% {
+  14% {
     opacity: 1;
-    transform: translate(-50%, -50%) rotate(80deg) scale(1.14);
   }
 
-  72% {
+  64% {
     opacity: 1;
-    transform: translate(-42%, -45%) rotate(190deg) scale(1);
+    transform: translate(-50%, -50%) translateX(340px) rotate(680deg) scale(1.08);
   }
 
   100% {
     opacity: 0;
-    transform: translate(-38%, -44%) rotate(250deg) scale(0.72);
+    transform: translate(-50%, -50%) translateX(405px) rotate(820deg) scale(0.82);
+  }
+}
+
+@keyframes daggerThrowLeft {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateX(0) rotate(132deg) scale(0.68);
+  }
+
+  14% {
+    opacity: 1;
+  }
+
+  64% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateX(-340px) rotate(-680deg) scale(1.08);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateX(-405px) rotate(-820deg) scale(0.82);
+  }
+}
+
+@keyframes daggerStick {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.64) rotate(-16deg);
+  }
+
+  24% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.16) rotate(5deg);
+  }
+
+  78% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.88) rotate(0);
   }
 }
 
