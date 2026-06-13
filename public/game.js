@@ -1,4 +1,4 @@
-const appVersion = "v0.1.0";
+const appVersion = "v0.1.2";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -35,6 +35,49 @@ const roleById = Object.fromEntries(classRoles.map((role) => [role.id, role]));
 const recruitRoles = classRoles.filter((role) => !["lordoran", "enemy"].includes(role.id));
 const tankChargeMax = 3;
 
+const eternalHeroes = [
+  {
+    key: "jamie",
+    name: "Jamie",
+    role: "medic",
+    maxHp: 22,
+    atk: 3,
+    spd: 4,
+    seed: 91001,
+    description: "So tall the party calls it scoliosis, but really she just got folded wrong by low ceilings."
+  },
+  {
+    key: "andrew",
+    name: "Andrew",
+    role: "tank",
+    maxHp: 32,
+    atk: 3,
+    spd: 1,
+    seed: 91002,
+    description: "Forced into tank duty by ancient paperwork. The class-change button is gone and HR refuses to help."
+  },
+  {
+    key: "phillip",
+    name: "Phillip",
+    role: "brawler",
+    maxHp: 26,
+    atk: 8,
+    spd: 2,
+    seed: 91003,
+    description: "Uhhhhhhh"
+  },
+  {
+    key: "lucas",
+    name: "Lucas",
+    role: "backliner",
+    maxHp: 19,
+    atk: 7,
+    spd: 6,
+    seed: 91004,
+    description: "Check this shit out"
+  }
+];
+
 const routeTemplates = [
   { type: "fight", label: "Skirmish", title: "Crooked Path", detail: "Normal enemy team. Pays coins and a choice of three recruits.", coins: "+stage", danger: "normal", odds: "base" },
   { type: "fight", label: "Skirmish", title: "Lantern Road", detail: "Balanced battle with a clean branch onward.", coins: "+stage", danger: "normal", odds: "base" },
@@ -68,6 +111,7 @@ const state = {
   currentNodePosition: { laneIndex: 1.5, y: 1030 },
   rewards: [],
   shop: [],
+  acquiredEternalKeys: [],
   log: [],
   combat: {
     activeId: null,
@@ -163,10 +207,15 @@ function rollRarity(stage, bonus = 0, rnd = Math.random) {
   return "common";
 }
 
-function makeHero(stage = state.stage, bonus = 0) {
+function makeHero(stage = state.stage, bonus = 0, reservedEternals = new Set()) {
   const seed = Math.floor(Math.random() * 9999999);
   const rnd = mulberry32(seed);
-  const rarity = rollRarity(stage, bonus, rnd);
+  let rarity = rollRarity(stage, bonus, rnd);
+  if (rarity === "eternal") {
+    const eternal = makeEternalHero(rnd, reservedEternals);
+    if (eternal) return eternal;
+    rarity = "legendary";
+  }
   const stat = rarityData[rarity].stat;
   const speedBias = Math.floor(rnd() * 3);
   const role = pick(recruitRoles, rnd);
@@ -185,6 +234,43 @@ function makeHero(stage = state.stage, bonus = 0) {
     seed,
     type: "hero"
   };
+}
+
+function makeEternalHero(rnd = Math.random, reservedEternals = new Set()) {
+  const blocked = ownedEternalKeys();
+  reservedEternals.forEach((key) => blocked.add(key));
+  const available = eternalHeroes.filter((hero) => !blocked.has(hero.key));
+  if (!available.length) return null;
+  const preset = pick(available, rnd);
+  return {
+    id: crypto.randomUUID(),
+    eternalKey: preset.key,
+    name: preset.name,
+    rarity: "eternal",
+    role: preset.role,
+    trait: preset.description,
+    hp: preset.maxHp,
+    maxHp: preset.maxHp,
+    atk: preset.atk,
+    spd: preset.spd,
+    tankCharge: preset.role === "tank" ? 0 : undefined,
+    stunnedTurns: 0,
+    seed: preset.seed,
+    type: "hero"
+  };
+}
+
+function ownedEternalKeys() {
+  const keys = new Set(state.acquiredEternalKeys);
+  [...state.team, ...state.rewards, ...state.shop].forEach((unit) => {
+    if (unit.eternalKey) keys.add(unit.eternalKey);
+  });
+  return keys;
+}
+
+function markEternalAcquired(hero) {
+  if (!hero.eternalKey || state.acquiredEternalKeys.includes(hero.eternalKey)) return;
+  state.acquiredEternalKeys.push(hero.eternalKey);
 }
 
 function makeEnemy(difficulty, elite = false) {
@@ -338,6 +424,7 @@ function resetRunState(options = {}) {
   state.currentNodePosition = { laneIndex: 1.5, y: 1030 };
   state.rewards = [];
   state.shop = [];
+  state.acquiredEternalKeys = [];
   state.combat = {
     activeId: null,
     targetId: null,
@@ -431,6 +518,7 @@ async function playBattle(elite = false, token = state.battleToken) {
       if (token !== state.battleToken) return;
       const unit = getBattleUnit(actor.id);
       if (!unit || unit.hp <= 0) continue;
+      if (actor.side === "ally" && !await resolveEternalTurnStart(unit, token)) continue;
 
       if (actor.side === "ally" && unitHasRole(unit, "medic")) {
         if (round % 3 === 0) {
@@ -454,6 +542,7 @@ async function playBattle(elite = false, token = state.battleToken) {
             state.combat.banner = `${unit.name} heals the whole team for ${total} total HP.`;
             pushLog(`${unit.name} heals the whole team for ${total} total HP.`);
             render();
+            await resolveJamieOutburst(unit, token);
             await wait(700);
             continue;
           }
@@ -483,6 +572,7 @@ async function playBattle(elite = false, token = state.battleToken) {
           state.combat.banner = `${unit.name} heals ${healTarget.name} for ${amount}.`;
           pushLog(`${unit.name} heals ${healTarget.name} for ${amount}.`);
           render();
+          await resolveJamieOutburst(unit, token);
           await wait(620);
           continue;
         }
@@ -517,6 +607,13 @@ async function playBattle(elite = false, token = state.battleToken) {
       }
       if (target.hp <= 0) {
         pushLog(`${target.name} falls.`);
+      }
+      if (actor.side === "ally" && unit.eternalKey === "lucas" && Math.random() < 0.2) {
+        const recoil = Math.max(1, Math.ceil(unit.atk / 2));
+        unit.hp -= recoil;
+        state.combat.effects.push({ id: unit.id, text: `-${recoil}`, kind: "damage" });
+        pushLog(`Lucas also damages himself for ${recoil}.`);
+        if (unit.hp <= 0) pushLog("Lucas immediately regrets checking that out.");
       }
 
       if (unitHasRole(unit, "backliner") && targets.length > 1) {
@@ -597,6 +694,70 @@ function chargeTank(unit) {
   if (unit.tankCharge >= tankChargeMax) {
     pushLog(`${unit.name}'s guard is fully charged.`);
   }
+}
+
+async function resolveEternalTurnStart(unit, token) {
+  if (unit.stunnedTurns > 0) {
+    unit.stunnedTurns -= 1;
+    state.combat.activeId = unit.id;
+    state.combat.targetId = unit.id;
+    state.combat.damage = "";
+    state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability" }];
+    state.combat.banner = `${unit.name} is still handling wifely duties.`;
+    pushLog(`${unit.name} sits this turn out.`);
+    playSound("ability", roleForUnit(unit).id);
+    render();
+    await wait(560);
+    return false;
+  }
+
+  if (unit.eternalKey === "andrew" && Math.random() < 0.15) {
+    unit.stunnedTurns = 3;
+    state.combat.activeId = unit.id;
+    state.combat.targetId = unit.id;
+    state.combat.damage = "";
+    state.combat.effects = [{ id: unit.id, text: "DUTIES", kind: "ability" }];
+    state.combat.banner = `${unit.name}: "I have wifely duties."`;
+    pushLog(`${unit.name} has wifely duties and sits out.`);
+    playSound("ability", "tank");
+    render();
+    await wait(720);
+    return false;
+  }
+
+  if (unit.eternalKey === "phillip" && Math.random() < 0.05) {
+    state.combat.activeId = unit.id;
+    state.combat.targetId = unit.id;
+    state.combat.damage = "";
+    state.combat.effects = [{ id: unit.id, text: "???", kind: "ability" }];
+    state.combat.banner = `${unit.name} takes a gummy and forgets what a turn is.`;
+    pushLog(`${unit.name}: Uhhhhhhh`);
+    playSound("ability", "brawler");
+    render();
+    await wait(680);
+    return false;
+  }
+
+  return true;
+}
+
+async function resolveJamieOutburst(unit, token) {
+  if (unit.eternalKey !== "jamie" || Math.random() >= 0.1) return;
+  const targets = living(state.team).filter((ally) => ally.id !== unit.id && ally.eternalKey);
+  if (!targets.length) return;
+  const target = pick(targets);
+  target.hp -= 1;
+  state.combat.activeId = unit.id;
+  state.combat.targetId = target.id;
+  state.combat.damage = "";
+  state.combat.effects = [{ id: target.id, text: "fuck you", kind: "curse" }];
+  state.combat.banner = `${unit.name} heals, then immediately yells at ${target.name}.`;
+  pushLog(`${unit.name} to ${target.name}: fuck you.`);
+  playSound("hit", "medic");
+  render();
+  await wait(520);
+  if (token !== state.battleToken) return;
+  if (target.hp <= 0) pushLog(`${target.name} falls from emotional damage.`);
 }
 
 function weakestLivingAlly() {
@@ -721,7 +882,12 @@ function openRewards(bonus = 0) {
   state.phase = "reward";
   state.lastRewardBonus = bonus;
   recoverTeam(0.18);
-  state.rewards = Array.from({ length: 3 }, () => makeHero(state.stage, bonus));
+  const reservedEternals = new Set();
+  state.rewards = Array.from({ length: 3 }, () => {
+    const hero = makeHero(state.stage, bonus, reservedEternals);
+    if (hero.eternalKey) reservedEternals.add(hero.eternalKey);
+    return hero;
+  });
 }
 
 function recruit(hero) {
@@ -730,6 +896,7 @@ function recruit(hero) {
     return;
   }
   state.team.push(hero);
+  markEternalAcquired(hero);
   applyHireTrait(hero);
   state.rewards = state.rewards.filter((reward) => reward.id !== hero.id);
   addLog(`${hero.name} joins Lordoran.`);
@@ -803,6 +970,7 @@ function buffRandom() {
 function hireFromShop() {
   const hero = makeHero(state.stage, 4);
   state.team.push(hero);
+  markEternalAcquired(hero);
   applyHireTrait(hero);
 }
 
@@ -1202,12 +1370,13 @@ function makeUnitCard(unit) {
   const node = els.unitTemplate.content.firstElementChild.cloneNode(true);
   const role = roleForUnit(unit);
   node.classList.add(unit.rarity);
+  if (unit.eternalKey) node.classList.add(`eternal-${unit.eternalKey}`);
   node.querySelector("h3").textContent = unit.name;
   node.querySelector(".rarity-pill").textContent = rarityData[unit.rarity].label;
   const classSlot = node.querySelector(".trait");
   classSlot.className = "class-slot";
   classSlot.textContent = "";
-  classSlot.append(makeRoleBadge(role));
+  classSlot.append(makeRoleBadge(role, "", unit.trait));
   if (unitHasRole(unit, "tank")) classSlot.append(makeTankChargeMeter(unit));
   node.querySelector(".hp").textContent = `HP ${Math.max(0, unit.hp)}/${unit.maxHp}`;
   node.querySelector(".atk").textContent = `ATK ${unit.atk}`;
@@ -1221,6 +1390,7 @@ function makeFighter(unit) {
   const combatEffect = combatEffectFor(unit);
   const token = document.createElement("article");
   token.className = `fighter-token ${unit.hp <= 0 ? "defeated" : ""} ${state.combat.activeId === unit.id ? "active" : ""} ${state.combat.targetId === unit.id ? "target" : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
+  if (unit.eternalKey) token.classList.add(`eternal-${unit.eternalKey}`);
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 96;
@@ -1259,12 +1429,12 @@ function makeTankChargeMeter(unit) {
   return meter;
 }
 
-function makeRoleBadge(role, size = "") {
+function makeRoleBadge(role, size = "", description = role.description) {
   const badge = document.createElement("span");
   badge.className = `class-badge role-${role.id} ${size}`.trim();
   badge.style.setProperty("--role-color", role.color);
   badge.tabIndex = 0;
-  badge.setAttribute("aria-label", `${role.label}: ${role.description}`);
+  badge.setAttribute("aria-label", `${role.label}: ${description}`);
   badge.append(makeRoleIcon(role.id));
 
   const tooltip = document.createElement("span");
@@ -1272,7 +1442,7 @@ function makeRoleBadge(role, size = "") {
   const title = document.createElement("strong");
   title.textContent = role.label;
   const detail = document.createElement("small");
-  detail.textContent = role.description;
+  detail.textContent = description;
   tooltip.append(title, detail);
   badge.append(tooltip);
   return badge;
@@ -1316,6 +1486,10 @@ function combatEffectFor(unit) {
 function drawSprite(canvas, unit) {
   if (unit.type === "lordoran") {
     drawLordoran(canvas, unit.seed);
+    return;
+  }
+  if (unit.eternalKey) {
+    drawEternalSprite(canvas, unit.eternalKey);
     return;
   }
   const ctx = canvas.getContext("2d");
@@ -1366,6 +1540,94 @@ function drawSprite(canvas, unit) {
   if (unit.type === "enemy") {
     px(left + 1, 7, 1, 1, "#ffef8f");
     px(left + width - 2, 7, 1, 1, "#ffef8f");
+  }
+}
+
+function drawEternalSprite(canvas, key) {
+  const ctx = canvas.getContext("2d");
+  const size = canvas.width;
+  const scale = size / 16;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = "#0d1016";
+  ctx.fillRect(0, 0, size, size);
+
+  function px(x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x * scale), Math.round(y * scale), Math.round(w * scale), Math.round(h * scale));
+  }
+
+  if (key === "jamie") {
+    px(5, 0, 6, 3, "#5a321f");
+    px(4, 2, 8, 2, "#6b3b25");
+    px(6, 2, 4, 3, "#f1c6a8");
+    px(6, 4, 1, 1, "#11151d");
+    px(9, 4, 1, 1, "#11151d");
+    px(7, 5, 2, 1, "#d96f8a");
+    px(5, 5, 6, 2, "#6b3b25");
+    px(6, 7, 4, 7, "#72d68b");
+    px(5, 8, 1, 5, "#f1c6a8");
+    px(10, 8, 1, 5, "#f1c6a8");
+    px(4, 13, 2, 2, "#72d68b");
+    px(10, 13, 2, 2, "#72d68b");
+    px(3, 4, 1, 10, "#f6f2e8");
+    px(2, 4, 3, 1, "#72d68b");
+    px(3, 3, 1, 3, "#72d68b");
+    px(7, 9, 2, 1, "#f6f2e8");
+    px(8, 8, 1, 3, "#f6f2e8");
+    px(6, 15, 2, 1, "#2d3340");
+    px(9, 15, 2, 1, "#2d3340");
+    return;
+  }
+
+  if (key === "andrew") {
+    px(5, 2, 6, 2, "#f3d36a");
+    px(6, 3, 4, 3, "#f0c3a2");
+    px(6, 5, 1, 1, "#11151d");
+    px(9, 5, 1, 1, "#11151d");
+    px(7, 6, 3, 1, "#9b5b3e");
+    px(4, 7, 8, 5, "#4aa3ff");
+    px(3, 8, 2, 5, "#2f6fc5");
+    px(11, 8, 2, 5, "#2f6fc5");
+    px(5, 12, 3, 3, "#2d3340");
+    px(9, 12, 3, 3, "#2d3340");
+    px(2, 8, 4, 5, "#b9fff4");
+    px(3, 9, 2, 3, "#4aa3ff");
+    px(7, 8, 2, 2, "#b9fff4");
+    return;
+  }
+
+  if (key === "phillip") {
+    px(3, 2, 10, 2, "#caa06a");
+    px(4, 1, 8, 2, "#d7b37e");
+    px(5, 3, 6, 2, "#caa06a");
+    px(6, 4, 4, 3, "#f0c3a2");
+    px(6, 6, 1, 1, "#11151d");
+    px(9, 6, 1, 1, "#11151d");
+    px(7, 7, 2, 1, "#d96f8a");
+    px(4, 8, 8, 4, "#f06a6a");
+    px(3, 9, 2, 4, "#f0c3a2");
+    px(11, 9, 2, 4, "#f0c3a2");
+    px(5, 12, 3, 3, "#2d3340");
+    px(9, 12, 3, 3, "#2d3340");
+    px(2, 10, 3, 2, "#f06a6a");
+    return;
+  }
+
+  if (key === "lucas") {
+    px(5, 2, 6, 2, "#5a321f");
+    px(6, 3, 4, 3, "#f0c3a2");
+    px(6, 5, 1, 1, "#11151d");
+    px(9, 5, 1, 1, "#11151d");
+    px(6, 6, 4, 2, "#4b2818");
+    px(4, 8, 8, 5, "#a46cff");
+    px(3, 9, 2, 4, "#f0c3a2");
+    px(11, 9, 2, 4, "#f0c3a2");
+    px(5, 13, 3, 2, "#2d3340");
+    px(9, 13, 3, 2, "#2d3340");
+    px(12, 7, 1, 7, "#dfe7ff");
+    px(11, 7, 3, 1, "#dfe7ff");
+    px(12, 6, 1, 2, "#a46cff");
   }
 }
 
