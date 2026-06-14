@@ -524,6 +524,7 @@ h1 {
   display: grid;
   gap: 10px;
   min-width: 0;
+  overflow: visible;
 }
 
 .battlefield {
@@ -533,8 +534,7 @@ h1 {
   gap: 10px;
   min-height: 236px;
   padding: 42px 10px 10px;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: visible;
 }
 
 .battle-banner {
@@ -554,6 +554,7 @@ h1 {
 
 .side {
   min-width: 580px;
+  overflow: visible;
 }
 
 .side h2 {
@@ -580,6 +581,7 @@ h1 {
   background: #141821;
   border: 1px solid rgba(246, 242, 232, 0.09);
   border-radius: 8px;
+  overflow: visible;
   transform: translateY(0);
   transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
@@ -722,6 +724,16 @@ h1 {
   gap: 5px;
   align-items: center;
   justify-content: center;
+}
+
+.token-badges:has(.class-badge:hover),
+.token-badges:has(.class-badge:focus-visible) {
+  z-index: 10000;
+}
+
+.token-badges:has(.class-badge:hover) ~ .hpbar,
+.token-badges:has(.class-badge:focus-visible) ~ .hpbar {
+  z-index: 0;
 }
 
 .hpbar {
