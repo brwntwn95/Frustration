@@ -1,4 +1,4 @@
-const appVersion = "v0.1.25";
+const appVersion = "v0.1.26";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
