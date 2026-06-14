@@ -1,4 +1,4 @@
-const appVersion = "v0.1.24";
+const appVersion = "v0.1.25";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -162,7 +162,7 @@ const state = {
   routes: [],
   mapColumns: [],
   pastMapColumns: [],
-  mapPan: { x: 0, y: -650 },
+  mapPan: { x: 0, y: -710 },
   mapDragMoved: false,
   pathHistory: [],
   currentNode: "Camp",
@@ -182,6 +182,7 @@ const state = {
     motion: "",
     activeSide: "",
     tauntId: null,
+    guardHits: 0,
     banner: "Pick a branch to begin the next fight.",
     locked: false
   },
@@ -463,6 +464,11 @@ function syncEternalLevels(stage = state.stage) {
   state.team.forEach((unit) => syncEternalUnit(unit, stage));
 }
 
+function syncLordoranLevel(stage = state.stage) {
+  const lordoran = state.team.find((unit) => unit.type === "lordoran");
+  if (lordoran) lordoran.level = stage;
+}
+
 function syncEternalUnit(unit, stage = state.stage) {
   if (!unit?.eternalKey) return;
   const level = recruitLevelForStage(stage);
@@ -585,7 +591,7 @@ function mapPanForCurrent() {
   const nextRowY = state.currentNodePosition.y - 130;
   return {
     x: Math.max(-160, Math.min(160, 380 - currentX)),
-    y: Math.max(-920, Math.min(-500, 250 - nextRowY))
+    y: Math.max(-920, Math.min(-500, 190 - nextRowY))
   };
 }
 
@@ -623,6 +629,7 @@ function randomRouteTemplate(type) {
 function awardCoins(amount) {
   state.coins += amount;
   state.earnedCoins += amount;
+  pushLog(`+${amount} coins`, "coin");
   updateCurrentScore();
 }
 
@@ -650,6 +657,7 @@ function awardKatKoins(amount) {
   if (amount <= 0) return;
   metaProgress.katKoins += amount;
   metaProgress.totalEarned += amount;
+  pushLog(`+${amount} Kat Koins`, "katkoin");
   saveMetaProgress();
 }
 
@@ -691,7 +699,7 @@ function resetRunState(options = {}) {
   state.enemies = [];
   state.mapColumns = [];
   state.pastMapColumns = [];
-  state.mapPan = { x: 0, y: -650 };
+  state.mapPan = { x: 0, y: -710 };
   state.mapDragMoved = false;
   state.pathHistory = [];
   state.currentNode = "Camp";
@@ -710,6 +718,7 @@ function resetRunState(options = {}) {
     motion: "",
     activeSide: "",
     tauntId: null,
+    guardHits: 0,
     banner: options.banner || "Pick a branch to begin the next fight.",
     locked: false
   };
@@ -767,6 +776,7 @@ function startBattle(encounterType = "fight") {
     motion: "",
     activeSide: "",
     tauntId: null,
+    guardHits: 0,
     banner: `${label} begins. Teams line up.`,
     locked: true
   };
@@ -804,7 +814,10 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
     state.combat.speech = null;
     state.combat.motion = "";
     state.combat.activeSide = "";
-    state.combat.tauntId = null;
+    if ((state.combat.guardHits || 0) <= 0) {
+      state.combat.tauntId = null;
+      state.combat.guardHits = 0;
+    }
     if (!await triggerRoundStartAbilities(token)) return;
     const actors = [...living(state.team).map((unit) => ({ id: unit.id, unit, side: "ally" })), ...living(state.enemies).map((unit) => ({ id: unit.id, unit, side: "enemy" }))]
       .sort((a, b) => battleSpeed(b.unit) - battleSpeed(a.unit) || b.unit.atk - a.unit.atk);
@@ -912,7 +925,7 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       let targets = actor.side === "ally" ? living(state.enemies) : living(state.team);
       if (actor.side === "enemy") {
         const taunter = getBattleUnit(state.combat.tauntId);
-        if (taunter && taunter.hp > 0) targets = [taunter];
+        if (taunter && taunter.hp > 0 && (state.combat.guardHits || 0) > 0) targets = [taunter];
       }
       if (!targets.length) break;
       let target = pick(targets);
@@ -921,10 +934,26 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
         ? await resolveTimedAttackAbility(unit, target, targets, token)
         : { damageMultiplier: 1, splashMultiplier: 0 };
       if (!timedAbility) return;
+      const lucasRecoilPending = actor.side === "ally" && unit.eternalKey === "lucas" && Math.random() < 0.2;
       if (actor.side === "ally") {
         targets = living(state.enemies);
         if (!targets.length) break;
         if (!targets.includes(target) || target.hp <= 0) target = pick(targets);
+      }
+
+      if (lucasRecoilPending) {
+        state.combat.activeId = unit.id;
+        state.combat.targetId = target.id;
+        state.combat.damage = "";
+        state.combat.effects = [{ id: unit.id, text: "READY", kind: "ability", visual: "dagger" }];
+        state.combat.motion = "dagger";
+        state.combat.activeSide = actor.side;
+        showCombatSpeech(unit, "Check this shit out");
+        state.combat.banner = `${unit.name}: "Check this shit out"`;
+        playSound("ability", "backliner");
+        render();
+        await wait(760);
+        if (token !== state.battleToken) return;
       }
 
       state.combat.activeId = unit.id;
@@ -940,28 +969,47 @@ async function playBattle(encounterType = "fight", token = state.battleToken) {
       await wait(360);
       if (token !== state.battleToken) return;
 
-      const attackDamage = Math.max(1, Math.round(unit.atk * (timedAbility.damageMultiplier || 1)));
+      const rawDamage = Math.max(1, Math.round(unit.atk * (timedAbility.damageMultiplier || 1)));
+      const guardedHit = actor.side === "enemy"
+        && unitHasRole(target, "tank")
+        && state.combat.tauntId === target.id
+        && (state.combat.guardHits || 0) > 0;
+      const attackDamage = guardedHit ? Math.max(1, Math.ceil(rawDamage * 0.8)) : rawDamage;
       target.hp -= attackDamage;
+      if (guardedHit) {
+        state.combat.guardHits = Math.max(0, state.combat.guardHits - 1);
+        if (state.combat.guardHits <= 0) state.combat.tauntId = null;
+      }
       state.combat.damage = `-${attackDamage}`;
-      state.combat.effects = [{ id: target.id, text: `-${attackDamage}`, kind: "damage", visual: timedAbility.visual || attackVisualFor(unit) }];
+      state.combat.effects = [{ id: target.id, text: guardedHit ? `-${attackDamage} GUARD` : `-${attackDamage}`, kind: "damage", visual: guardedHit ? "shield" : timedAbility.visual || attackVisualFor(unit) }];
       state.combat.motion = "attack";
       state.combat.activeSide = actor.side;
-      state.combat.banner = `${unit.name} hits ${target.name} for ${attackDamage}.`;
+      state.combat.banner = guardedHit
+        ? `${target.name}'s guard softens ${unit.name}'s hit to ${attackDamage}.`
+        : `${unit.name} hits ${target.name} for ${attackDamage}.`;
       playSound("hit", roleForUnit(unit).id);
-      pushLog(`${unit.name} hits ${target.name} for ${attackDamage}.`);
+      pushLog(
+        guardedHit
+          ? `${target.name}'s Guard reduces ${unit.name}'s hit to ${attackDamage}. ${state.combat.guardHits} guarded hits remain.`
+          : `${unit.name} hits ${target.name} for ${attackDamage}.`,
+        guardedHit ? "guard" : "damage"
+      );
       if (actor.side === "enemy" && unitHasRole(target, "tank")) {
         chargeTank(target);
       }
       if (target.hp <= 0) {
+        if (state.combat.tauntId === target.id) {
+          state.combat.tauntId = null;
+          state.combat.guardHits = 0;
+        }
         pushLog(`${target.name} falls.`);
       }
-      if (actor.side === "ally" && unit.eternalKey === "lucas" && Math.random() < 0.2) {
+      if (lucasRecoilPending) {
         const recoil = Math.max(1, Math.ceil(attackDamage / 2));
         unit.hp -= recoil;
         state.combat.effects.push({ id: unit.id, text: `-${recoil}`, kind: "damage", visual: "recoil" });
-        showCombatSpeech(unit, "Check this shit out");
-        pushLog(`Lucas also damages himself for ${recoil}.`);
-        if (unit.hp <= 0) pushLog("Lucas immediately regrets checking that out.");
+        pushLog(`Lucas also damages himself for ${recoil}.`, "damage");
+        if (unit.hp <= 0) pushLog("Lucas immediately regrets checking that out.", "damage");
       }
 
       if (timedAbility.splashMultiplier > 0) {
@@ -993,6 +1041,7 @@ function finishBattle(won, encounterType = "fight") {
   state.combat.motion = "";
   state.combat.activeSide = "";
   state.combat.tauntId = null;
+  state.combat.guardHits = 0;
   state.combat.locked = false;
   state.currentRound = 0;
   if (won) {
@@ -1003,7 +1052,7 @@ function finishBattle(won, encounterType = "fight") {
     state.levelsCleared += 1;
     updateCurrentScore();
     state.threat += type === "elite" ? 1.5 : type === "veteran" ? 0.8 : 0.5;
-    state.team[0].level += 1;
+    syncLordoranLevel(state.stage);
     state.team[0].maxHp += 1;
     state.team[0].hp = state.team[0].maxHp;
     state.team[0].atk += state.stage % 2 === 0 ? 1 : 0;
@@ -1117,8 +1166,9 @@ async function triggerRoundStartAbilities(token) {
   state.combat.motion = "shield";
   state.combat.activeSide = unitSide(tank);
   state.combat.tauntId = tank.id;
-  state.combat.banner = `${tank.name} spends full guard charge and taunts the enemies this round.`;
-  pushLog(`${tank.name} spends guard charge. Enemies must target them this round.`);
+  state.combat.guardHits = 3;
+  state.combat.banner = `${tank.name} spends full guard charge and draws the next 3 enemy hits.`;
+  pushLog(`${tank.name} raises Guard. The next 3 enemy hits target them for 20% less damage.`, "guard");
   playSound("ability", "tank");
   render();
   await wait(760);
@@ -1208,21 +1258,25 @@ async function resolveJamieOutburst(unit, token, healingDone = 0) {
   if (!targets.length) return;
   const target = pick(targets);
   const damage = Math.max(1, Math.ceil(healingDone * 0.5));
-  target.hp -= damage;
   state.combat.activeId = unit.id;
   state.combat.targetId = target.id;
   state.combat.damage = "";
-  state.combat.effects = [{ id: target.id, text: `-${damage}`, kind: "curse", visual: "curse" }];
+  state.combat.effects = [{ id: unit.id, text: "CURSE", kind: "ability", visual: "curse" }];
   state.combat.motion = "curse";
   state.combat.activeSide = unitSide(unit);
   showCombatSpeech(unit, "fuck you");
   state.combat.banner = `${unit.name} converts bedside manner into ${damage} damage to ${target.name}.`;
-  pushLog(`${unit.name} to ${target.name}: fuck you. ${damage} damage.`);
   playSound("hit", "medic");
   render();
-  await wait(1040);
+  await wait(540);
   if (token !== state.battleToken) return;
-  if (target.hp <= 0) pushLog(`${target.name} falls from emotional damage.`);
+  target.hp -= damage;
+  state.combat.effects = [{ id: target.id, text: `-${damage}`, kind: "curse", visual: "curse" }];
+  pushLog(`${unit.name} to ${target.name}: fuck you. ${damage} damage.`, "damage");
+  render();
+  await wait(620);
+  if (token !== state.battleToken) return;
+  if (target.hp <= 0) pushLog(`${target.name} falls from emotional damage.`, "damage");
 }
 
 function showCombatSpeech(unit, text) {
@@ -1404,8 +1458,20 @@ function renderSoundButton() {
   els.soundButton.setAttribute("aria-pressed", String(state.soundOn));
 }
 
-function pushLog(message) {
-  state.log = [message, ...state.log].slice(0, 20);
+function pushLog(message, kind = inferLogKind(message)) {
+  state.log = [{ message, kind }, ...state.log].slice(0, 20);
+}
+
+function inferLogKind(message) {
+  const text = String(message || "").toLowerCase();
+  if (text.includes("kat koin")) return "katkoin";
+  if (text.includes("coin")) return "coin";
+  if (text.includes("heal") || text.includes("hp")) return "heal";
+  if (text.includes("hit") || text.includes("damage") || text.includes("falls")) return "damage";
+  if (text.includes("guard") || text.includes("taunt")) return "guard";
+  if (text.includes("ability") || text.includes("stun") || text.includes("crit") || text.includes("dagger") || text.includes("girth")) return "ability";
+  if (text.includes("round")) return "round";
+  return "info";
 }
 
 function healWeakest(amount) {
@@ -1459,6 +1525,7 @@ function sell(unitId) {
 
 function continueRun() {
   state.stage += 1;
+  syncLordoranLevel(state.stage);
   syncEternalLevels(state.stage);
   state.phase = "route";
   state.rewards = [];
@@ -1533,6 +1600,7 @@ function hireFromShop() {
 
 function leaveShop() {
   state.stage += 1;
+  syncLordoranLevel(state.stage);
   syncEternalLevels(state.stage);
   state.phase = "route";
   state.shop = [];
@@ -1548,6 +1616,7 @@ function runMystery() {
     const coins = 7 + state.stage;
     awardCoins(coins);
     state.stage += 1;
+    syncLordoranLevel(state.stage);
     state.phase = "route";
     state.enemies = [];
     state.combat.banner = `The odd door pays out. Stage ${state.stage} awaits.`;
@@ -2096,9 +2165,39 @@ function renderLog() {
   els.battleLog.innerHTML = "";
   state.log.slice(0, 14).forEach((entry) => {
     const p = document.createElement("p");
-    p.textContent = entry;
+    const normalized = normalizeLogEntry(entry);
+    p.className = `log-entry ${normalized.kind}`;
+    const icon = document.createElement("span");
+    icon.className = "log-icon";
+    icon.innerHTML = logIconMarkup(normalized.kind);
+    const text = document.createElement("span");
+    text.className = "log-text";
+    text.textContent = normalized.message;
+    p.append(icon, text);
     els.battleLog.append(p);
   });
+}
+
+function normalizeLogEntry(entry) {
+  if (typeof entry === "string") return { message: entry, kind: inferLogKind(entry) };
+  return {
+    message: entry?.message || "",
+    kind: entry?.kind || inferLogKind(entry?.message)
+  };
+}
+
+function logIconMarkup(kind) {
+  const icons = {
+    damage: effectIconMarkup("strike"),
+    heal: effectIconMarkup("wisp"),
+    coin: '<circle cx="12" cy="12" r="8" fill="currentColor"/><path d="M12 7v10M15 9.5c-.8-1-2.2-1.3-3.4-.8-1.4.6-1.4 2.4.1 2.9l1.4.5c1.7.6 1.6 2.7-.1 3.2-1.3.4-2.8 0-3.7-1" fill="none" stroke="#11151d" stroke-width="1.8" stroke-linecap="round"/>',
+    katkoin: '<circle cx="12" cy="12" r="8" fill="currentColor"/><circle cx="8.5" cy="9.5" r="1.4" fill="#f6f2e8"/><circle cx="12" cy="8.2" r="1.5" fill="#f6f2e8"/><circle cx="15.5" cy="9.5" r="1.4" fill="#f6f2e8"/><path d="M8.5 15c.9-2 1.9-3 3.5-3s2.6 1 3.5 3c.4 1-.2 1.8-1.3 1.8H9.8c-1.1 0-1.7-.8-1.3-1.8z" fill="#f6f2e8"/>',
+    guard: effectIconMarkup("shield"),
+    ability: effectIconMarkup("charge"),
+    round: effectIconMarkup("charge"),
+    info: effectIconMarkup("strike")
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[kind] || icons.info}</svg>`;
 }
 
 function makeUnitCard(unit) {
@@ -2129,8 +2228,9 @@ function makeFighter(unit) {
   const isActive = state.combat.activeId === unit.id;
   const isTarget = state.combat.targetId === unit.id;
   const isHealed = combatEffect?.kind === "heal";
+  const isGuarded = state.combat.tauntId === unit.id && (state.combat.guardHits || 0) > 0;
   const token = document.createElement("article");
-  token.className = `fighter-token ${side ? `${side}-token` : ""} ${unit.rarity} ${unit.hp <= 0 ? "defeated" : ""} ${isActive ? "active" : ""} ${isTarget ? "target" : ""} ${isHealed ? "healed-token" : ""} ${isActive && state.combat.motion ? `${state.combat.motion}-motion ${state.combat.activeSide ? `${state.combat.activeSide}-motion` : ""}` : ""} ${isTarget && state.combat.motion ? `${state.combat.motion}-target` : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
+  token.className = `fighter-token ${side ? `${side}-token` : ""} ${unit.rarity} ${unit.hp <= 0 ? "defeated" : ""} ${isActive ? "active" : ""} ${isTarget ? "target" : ""} ${isHealed ? "healed-token" : ""} ${isGuarded ? "guarded-token" : ""} ${isActive && state.combat.motion ? `${state.combat.motion}-motion ${state.combat.activeSide ? `${state.combat.activeSide}-motion` : ""}` : ""} ${isTarget && state.combat.motion ? `${state.combat.motion}-target` : ""} ${combatEffect?.kind === "ability" ? "ability-burst" : ""}`;
   if (unit.eternalKey) token.classList.add(`eternal-${unit.eternalKey}`);
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -2155,6 +2255,13 @@ function makeFighter(unit) {
   if (abilityMeterMax(unit)) token.append(makeAbilityChargeMeter(unit));
   const overlay = document.createElement("div");
   overlay.className = "combat-overlay";
+  if (isGuarded) {
+    const guard = document.createElement("div");
+    guard.className = "guard-status";
+    guard.append(makeEffectIcon("shield"), document.createTextNode(`${state.combat.guardHits}`));
+    guard.setAttribute("aria-label", `Guard active for ${state.combat.guardHits} hits`);
+    overlay.append(guard);
+  }
   if (isActive && state.combat.motion === "dagger") {
     const projectile = document.createElement("div");
     projectile.className = `combat-projectile dagger-projectile ${side === "enemy" ? "enemy-projectile" : "ally-projectile"}`;
