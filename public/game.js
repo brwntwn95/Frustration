@@ -1,4 +1,4 @@
-const appVersion = "v0.1.26";
+const appVersion = "v0.1.27";
 
 const rarityData = {
   common: { label: "Common", color: "#4aa3ff", value: 3, stat: 1 },
@@ -117,11 +117,11 @@ const eternalHeroes = [
 const eternalModifiers = {
   jamie: {
     title: "Tall Girl Tantrum",
-    detail: "After healing, 10% chance to curse another Eternal ally for 1 damage and a very personal \"fuck you.\""
+    detail: "After healing, 10% chance to curse another Eternal ally for damage equal to 50% of the healing done and a very personal \"fuck you.\""
   },
   andrew: {
     title: "Wifely Duties",
-    detail: "15% chance at turn start to sit out for 3 turns. Guard charge still builds and can still taunt while he is busy."
+    detail: "10% chance at turn start to sit out for 3 turns. Guard charge still builds and can still taunt while he is busy."
   },
   phillip: {
     title: "Gummy Pause",
@@ -1216,7 +1216,7 @@ async function resolveEternalTurnStart(unit, token) {
     return false;
   }
 
-  if (unit.eternalKey === "andrew" && Math.random() < 0.15) {
+  if (unit.eternalKey === "andrew" && Math.random() < 0.1) {
     unit.stunnedTurns = 3;
     state.combat.activeId = unit.id;
     state.combat.targetId = unit.id;
