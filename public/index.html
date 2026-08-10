@@ -1,14 +1,193 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Frustration Rummy</title>
-    <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body>
-    <main id="app"></main>
-    <div id="toast" role="status" aria-live="polite"></div>
-    <script src="/client.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a1421">
+  <title>What ArcheAge Class Are You?</title>
+  <style>
+    :root { --ink:#ecf5ef; --muted:#b7c9c1; --gold:#f2c66e; --gold-deep:#bd8434; --navy:#07141f; --panel:rgba(12,31,43,.9); --line:rgba(221,190,117,.28); --teal:#4fc5b2; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--ink); font-family:Georgia, 'Times New Roman', serif; background:radial-gradient(circle at 12% 14%, #24434e 0, transparent 30%), radial-gradient(circle at 88% 0%, #402b41 0, transparent 28%), linear-gradient(135deg,#07141f 5%,#0b2732 50%,#111b2d); }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; opacity:.28; background-image:linear-gradient(30deg,transparent 49%,rgba(244,206,130,.12) 50%,transparent 51%),linear-gradient(-30deg,transparent 49%,rgba(244,206,130,.08) 50%,transparent 51%); background-size:90px 90px; mask-image:linear-gradient(to bottom,black,transparent); }
+    main { width:min(760px, calc(100% - 32px)); margin:0 auto; padding:54px 0 44px; position:relative; }
+    .crest { width:68px; height:68px; display:grid; place-items:center; margin:0 auto 18px; border:1px solid var(--gold); border-radius:50%; color:var(--gold); font-size:33px; box-shadow:0 0 0 7px rgba(242,198,110,.07), 0 0 34px rgba(242,198,110,.16); }
+    .eyebrow { margin:0 0 10px; color:var(--gold); text-align:center; letter-spacing:.18em; font-family:Arial,sans-serif; font-size:.72rem; font-weight:bold; text-transform:uppercase; }
+    h1 { max-width:650px; margin:0 auto; font-size:clamp(2.3rem,8vw,4.5rem); line-height:.93; text-align:center; letter-spacing:-.045em; text-shadow:0 3px 20px #000; }
+    .intro { max-width:570px; margin:20px auto 28px; color:var(--muted); text-align:center; font-size:1.05rem; line-height:1.55; }
+    .card { overflow:hidden; border:1px solid var(--line); border-radius:18px; background:linear-gradient(145deg,rgba(19,47,59,.96),rgba(8,22,34,.96)); box-shadow:0 20px 55px rgba(0,0,0,.27); }
+    .progress-wrap { height:7px; background:rgba(0,0,0,.26); }
+    .progress { width:0; height:100%; background:linear-gradient(90deg,var(--teal),var(--gold)); transition:width .28s ease; }
+    .quiz { padding:31px; }
+    .question-number { margin:0 0 9px; color:var(--teal); font-family:Arial,sans-serif; font-size:.73rem; font-weight:bold; letter-spacing:.13em; text-transform:uppercase; }
+    h2 { margin:0 0 24px; font-size:clamp(1.55rem,5vw,2.25rem); line-height:1.12; }
+    .choices { display:grid; gap:11px; }
+    .choice { width:100%; padding:15px 16px; color:var(--ink); cursor:pointer; text-align:left; font:inherit; font-size:1rem; line-height:1.35; border:1px solid rgba(216,234,224,.2); border-radius:10px; background:rgba(3,13,21,.34); transition:transform .14s, border-color .14s, background .14s; }
+    .choice:hover, .choice:focus-visible { outline:none; transform:translateX(4px); border-color:var(--gold); background:rgba(242,198,110,.11); }
+    .choice-key { display:inline-grid; place-items:center; width:25px; height:25px; margin-right:10px; color:var(--gold); border:1px solid rgba(242,198,110,.55); border-radius:50%; font:700 .75rem Arial,sans-serif; }
+    .result { padding:35px 31px 31px; text-align:center; }
+    .result-mark { color:var(--gold); font-size:2.4rem; line-height:1; }
+    .result h2 { margin:7px 0 8px; color:#fff7da; font-size:clamp(2.7rem,10vw,4.6rem); }
+    .role { margin:0 0 23px; color:var(--teal); font-family:Arial,sans-serif; font-size:.76rem; font-weight:bold; letter-spacing:.14em; text-transform:uppercase; }
+    .skillsets { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin:0 0 22px; }
+    .skill { padding:7px 10px; color:#ffe8ad; border:1px solid rgba(242,198,110,.43); border-radius:100px; background:rgba(125,87,25,.17); font:700 .77rem Arial,sans-serif; letter-spacing:.03em; }
+    .description { max-width:570px; margin:0 auto 10px; color:var(--muted); font-size:1.08rem; line-height:1.58; }
+    .match { max-width:570px; margin:0 auto 27px; color:#dae8e0; font-size:.96rem; line-height:1.5; }
+    .actions { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
+    .action { padding:12px 16px; color:var(--ink); cursor:pointer; border:1px solid var(--line); border-radius:9px; background:transparent; font:700 .82rem Arial,sans-serif; letter-spacing:.04em; text-transform:uppercase; }
+    .action:hover, .action:focus-visible { outline:none; color:#10222a; border-color:var(--gold); background:var(--gold); }
+    .small-note { margin:23px auto 0; max-width:610px; color:#94aaa3; text-align:center; font-size:.82rem; line-height:1.5; }
+    .small-note a { color:#c8dfd5; }
+    .hidden { display:none; }
+    @media (max-width:520px) { main{padding-top:34px} .quiz,.result{padding:25px 20px} .choice{padding:13px} }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="crest" aria-hidden="true">✦</div>
+    <p class="eyebrow">A personality quiz for adventurers</p>
+    <h1>What ArcheAge<br>Class Are You?</h1>
+    <p class="intro">Choose the answers that feel most like you. Your playstyle will be matched to a real, preset ArcheAge class made from three skillsets.</p>
+    <section class="card" aria-live="polite">
+      <div class="progress-wrap"><div class="progress" id="progress"></div></div>
+      <div class="quiz" id="quiz"></div>
+      <div class="result hidden" id="result"></div>
+    </section>
+    <p class="small-note">Class names and three-skillset combinations use ArcheAge’s established class table. This is a fan-made personality quiz, not an official ArcheAge product. <a href="https://archeage.fandom.com/wiki/Classes" target="_blank" rel="noopener">See the class combinations</a>.</p>
+  </main>
+  <script>
+    const questions = [
+      { q: 'Your party reaches a dangerous boss. You naturally…', a: [
+        ['Step forward and make sure it cannot reach anyone else.', { Defense:3, Battlerage:1, Auramancy:1 }],
+        ['Look for the cleanest long-range angle before the fight begins.', { Archery:3, Shadowplay:1 }],
+        ['Watch health bars and prepare to rescue someone at the worst moment.', { Vitalism:3, Songcraft:1 }],
+        ['Study the arena for a clever setup or a devastating combo.', { Sorcery:2, Occultism:2, Witchcraft:1 }]
+      ]},
+      { q: 'Which kind of victory feels the most satisfying?', a: [
+        ['Dashing in, executing a perfect melee combo, and escaping unscathed.', { Battlerage:3, Shadowplay:2, Auramancy:1 }],
+        ['Landing a precise shot from somewhere nobody expected.', { Archery:3, Shadowplay:2 }],
+        ['Turning the whole battlefield with timing, spells, and crowd control.', { Sorcery:2, Witchcraft:2, Occultism:2 }],
+        ['Keeping the team alive long enough for everyone else to shine.', { Vitalism:3, Songcraft:2, Defense:1 }]
+      ]},
+      { q: 'When a game gets chaotic, your instinct is to…', a: [
+        ['Create space, soak the pressure, and hold the line.', { Defense:3, Auramancy:2 }],
+        ['Move faster than the chaos and strike from a new angle.', { Shadowplay:3, Archery:1, Battlerage:1 }],
+        ['Control people’s choices with snares, fears, and inconvenient magic.', { Witchcraft:3, Occultism:2 }],
+        ['Call the play, boost allies, and give the group its rhythm.', { Songcraft:3, Vitalism:1, Auramancy:1 }]
+      ]},
+      { q: 'Pick your ideal MMO weapon fantasy.', a: [
+        ['A heavy weapon, a charge, and decisive close-quarters hits.', { Battlerage:3, Defense:1 }],
+        ['A bow, a vantage point, and the patience to take the shot.', { Archery:3, Shadowplay:1 }],
+        ['Elemental power that fills the screen and punishes clumped enemies.', { Sorcery:3, Occultism:1 }],
+        ['A staff or instrument that makes allies tougher and harder to kill.', { Vitalism:2, Songcraft:2, Auramancy:1 }]
+      ]},
+      { q: 'Your friends would most likely call you the…', a: [
+        ['Fearless initiator.', { Battlerage:2, Defense:2, Auramancy:1 }],
+        ['Sneaky problem-solver.', { Shadowplay:3, Witchcraft:1, Occultism:1 }],
+        ['Calm tactician.', { Occultism:2, Witchcraft:2, Sorcery:1 }],
+        ['Reliable protector.', { Vitalism:2, Songcraft:2, Defense:1 }]
+      ]},
+      { q: 'In a dungeon group, what job do you quietly take ownership of?', a: [
+        ['Keeping enemies focused on me and surviving the hit.', { Defense:3, Battlerage:1 }],
+        ['Removing priority targets before they become a problem.', { Archery:2, Battlerage:2, Shadowplay:1 }],
+        ['Keeping everyone healed, cleansed, and moving.', { Vitalism:3, Auramancy:1 }],
+        ['Buffing allies and making every fight run more smoothly.', { Songcraft:3, Auramancy:2 }]
+      ]},
+      { q: 'You find a powerful ability with a long cooldown. You use it…', a: [
+        ['At the first perfect opening for a burst kill.', { Battlerage:2, Archery:1, Shadowplay:2 }],
+        ['To lock down the exact enemy who can ruin the plan.', { Witchcraft:2, Occultism:3 }],
+        ['When my team needs an emergency reset or protection.', { Vitalism:2, Defense:2, Auramancy:2 }],
+        ['To amplify a coordinated team push.', { Songcraft:3, Sorcery:1 }]
+      ]},
+      { q: 'What makes a build feel especially “you”?', a: [
+        ['High mobility and outplay potential.', { Shadowplay:3, Auramancy:2, Battlerage:1 }],
+        ['A reliable answer to almost anything that hits the team.', { Defense:2, Vitalism:2, Auramancy:2 }],
+        ['Big spell combos that reward planning and precision.', { Sorcery:3, Occultism:2, Witchcraft:1 }],
+        ['Tools that make the whole party better than the sum of its parts.', { Songcraft:3, Vitalism:1, Auramancy:1 }]
+      ]},
+      { q: 'If you’re behind in a competitive match, you prefer to…', a: [
+        ['Force a bold fight and turn momentum with aggression.', { Battlerage:3, Defense:1 }],
+        ['Play evasively until a flank or pick presents itself.', { Archery:2, Shadowplay:3 }],
+        ['Set a trap, disrupt their plan, and make them overextend.', { Witchcraft:2, Occultism:3 }],
+        ['Stabilize the group, then rebuild the advantage together.', { Vitalism:2, Songcraft:2, Auramancy:1 }]
+      ]},
+      { q: 'Choose a battlefield moment to be remembered for.', a: [
+        ['The unbreakable defender at the centre of the fight.', { Defense:3, Vitalism:1, Auramancy:2 }],
+        ['The impossible assassination nobody saw coming.', { Shadowplay:3, Battlerage:2, Occultism:1 }],
+        ['The devastating magical sequence that decides the battle.', { Sorcery:3, Witchcraft:2, Occultism:1 }],
+        ['The clutch save and rally that lets your allies win.', { Vitalism:3, Songcraft:2 }]
+      ]}
+    ];
+
+    const classes = [
+      { name:'Darkrunner', sets:['Battlerage','Shadowplay','Auramancy'], role:'Mobile melee skirmisher', desc:'You are decisive, slippery, and happiest when you control the pace. You like to enter on your terms, create a quick advantage, and be gone before the counterattack lands.', match:'Battlerage supplies close-range pressure; Shadowplay brings tricks and mobility; Auramancy adds movement and utility.' },
+      { name:'Executioner', sets:['Battlerage','Occultism','Shadowplay'], role:'Aggressive control fighter', desc:'You pair an urge to engage with a taste for making opponents helpless. You do not merely win duels—you set the terms of them.', match:'Battlerage and Shadowplay provide the attack angle, while Occultism adds disruptive control.' },
+      { name:'Blade Dancer', sets:['Battlerage','Shadowplay','Songcraft'], role:'Tempo-setting melee support', desc:'You want to fight in the thick of it, but you also notice the whole team. Your ideal contribution is damage, tempo, and a timely boost all at once.', match:'Battlerage and Shadowplay drive the skirmish; Songcraft brings team-facing rhythm and buffs.' },
+      { name:'Abolisher', sets:['Battlerage','Defense','Auramancy'], role:'Front-line bruiser', desc:'You lead from the front: tough enough to absorb pressure and assertive enough to make space. The group feels safer when you are already in the fight.', match:'Battlerage contributes force, Defense holds ground, and Auramancy rounds it out with utility.' },
+      { name:'Blighter', sets:['Battlerage','Defense','Shadowplay'], role:'Relentless melee tank', desc:'You have a stubborn, practical playstyle: stay alive, stay dangerous, and never let the opposition have an easy target.', match:'Defense anchors your durability while Battlerage and Shadowplay keep the pressure on.' },
+      { name:'Primeval', sets:['Archery','Shadowplay','Auramancy'], role:'Mobile ranged striker', desc:'You see the battlefield as a map of angles and escape routes. Freedom of movement and a clean shot are more satisfying than a fair fight.', match:'Archery gives range, Shadowplay supports repositioning, and Auramancy adds agile utility.' },
+      { name:'Stone Arrow', sets:['Defense','Archery','Shadowplay'], role:'Durable ranged fighter', desc:'You prefer a prepared position over a reckless one. You can deliver damage from range, but you always want a plan for when danger closes in.', match:'Archery handles the pressure at range; Defense and Shadowplay help you survive the return fire.' },
+      { name:'Ebonsong', sets:['Archery','Shadowplay','Songcraft'], role:'Ranged team tempo', desc:'You bring an eye for opportunity and a feel for the group’s momentum. You like to stay mobile while quietly improving every engagement.', match:'Archery and Shadowplay favor moving shots; Songcraft lets you add group value.' },
+      { name:'Ranger', sets:['Archery','Shadowplay','Vitalism'], role:'Self-reliant ranged survivor', desc:'You like independence, smart positioning, and being the person who can still function when a plan goes sideways.', match:'Archery provides the shot, Shadowplay the escape, and Vitalism the recovery tools.' },
+      { name:'Spellsinger', sets:['Sorcery','Songcraft','Shadowplay'], role:'Mobile battle mage', desc:'You want spectacular magic, but never at the cost of being predictable. You mix bursts of power with movement and a dash of showmanship.', match:'Sorcery powers the spells; Shadowplay adds nimbleness; Songcraft supports the team rhythm.' },
+      { name:'Daggerspell', sets:['Sorcery','Witchcraft','Shadowplay'], role:'Arcane ambusher', desc:'You enjoy clever, high-impact plays—the kind that look inevitable only after you have already pulled them off.', match:'Sorcery supplies magical damage, Witchcraft controls the target, and Shadowplay finds the angle.' },
+      { name:'Demonologist', sets:['Sorcery','Occultism','Witchcraft'], role:'Control mage', desc:'You are a planner who loves turning complexity into an advantage. Timing, disruption, and a chain of consequences are your idea of fun.', match:'Sorcery brings spell damage while Occultism and Witchcraft pile on control and disruption.' },
+      { name:'Revenant', sets:['Sorcery','Occultism','Auramancy'], role:'Battlefield spellcaster', desc:'You are drawn to powerful tools, tactical control, and just enough resilience to keep casting when others would retreat.', match:'Sorcery and Occultism drive potent magic; Auramancy adds protective mobility and utility.' },
+      { name:'Arcanist', sets:['Sorcery','Auramancy','Witchcraft'], role:'Versatile arcane tactician', desc:'You favor answers over brute force. You would rather reposition, outthink, and outmaneuver an enemy than simply overwhelm them.', match:'Sorcery provides elemental force, Witchcraft disrupts, and Auramancy keeps you flexible.' },
+      { name:'Cleric', sets:['Auramancy','Songcraft','Vitalism'], role:'Group cornerstone', desc:'You are the person whose presence makes everyone braver. Helping others succeed is not a side job—it is how you win.', match:'Vitalism heals, Songcraft boosts the group, and Auramancy adds adaptable protection and utility.' },
+      { name:'Confessor', sets:['Vitalism','Songcraft','Shadowplay'], role:'Agile support', desc:'You are supportive without being passive. You want to rescue teammates, adapt quickly, and always have an escape route.', match:'Vitalism and Songcraft support the party, while Shadowplay makes the support surprisingly elusive.' },
+      { name:'Templar', sets:['Defense','Vitalism','Auramancy'], role:'Unyielding protector', desc:'You are steady under pressure and take pride in being the last person standing between danger and your friends.', match:'Defense holds the line, Vitalism sustains it, and Auramancy supplies protection and utility.' },
+      { name:'Skullknight', sets:['Defense','Occultism','Auramancy'], role:'Disruptive tank', desc:'You do not just endure the fight—you bend it. You like to be difficult to remove and even more difficult to ignore.', match:'Defense provides the anchor; Occultism disrupts foes; Auramancy adds flexible defenses.' },
+      { name:'Tomb Warden', sets:['Defense','Auramancy','Songcraft'], role:'Fortifying support tank', desc:'You bring composure to chaos. Your favorite kind of power is the kind that makes the entire group harder to break.', match:'Defense protects the front, Auramancy brings utility, and Songcraft strengthens the team.' },
+      { name:'Necromancer', sets:['Vitalism','Occultism','Witchcraft'], role:'Control-oriented healer', desc:'You see support as a tactical art. Keeping allies alive matters, but preventing the enemy from acting matters just as much.', match:'Vitalism sustains allies; Occultism and Witchcraft add curses, disruption, and control.' },
+      { name:'Nightwitch', sets:['Witchcraft','Shadowplay','Songcraft'], role:'Tricky battlefield support', desc:'You are creative, elusive, and slightly mischievous. You make the field confusing for enemies and more favorable for friends.', match:'Witchcraft controls, Shadowplay repositions, and Songcraft brings supportive tempo.' },
+      { name:'Hex Warden', sets:['Battlerage','Witchcraft','Auramancy'], role:'Arcane melee controller', desc:'You like to get close, but never without a trick. Your best plays combine aggression, disruption, and an escape plan.', match:'Battlerage drives melee pressure; Witchcraft hinders foes; Auramancy adds mobility and resilience.' }
+    ];
+
+    const quiz = document.getElementById('quiz'), result = document.getElementById('result'), progress = document.getElementById('progress');
+    let index = 0, scores = {}, answerHistory = [];
+    const letters = ['A','B','C','D'];
+
+    function renderQuestion() {
+      const item = questions[index];
+      progress.style.width = `${(index / questions.length) * 100}%`;
+      quiz.innerHTML = `<p class="question-number">Question ${index + 1} of ${questions.length}</p><h2>${item.q}</h2><div class="choices">${item.a.map((answer, i) => `<button class="choice" data-answer="${i}"><span class="choice-key">${letters[i]}</span>${answer[0]}</button>`).join('')}</div>`;
+      quiz.querySelectorAll('.choice').forEach(button => button.addEventListener('click', () => chooseAnswer(Number(button.dataset.answer))));
+    }
+
+    function chooseAnswer(choice) {
+      const points = questions[index].a[choice][1];
+      answerHistory[index] = choice;
+      Object.entries(points).forEach(([skill, value]) => scores[skill] = (scores[skill] || 0) + value);
+      index += 1;
+      if (index < questions.length) renderQuestion(); else showResult();
+    }
+
+    function getClass() {
+      const ranked = classes.map((candidate, order) => ({ ...candidate, order, score: candidate.sets.reduce((sum, set) => sum + (scores[set] || 0), 0) })).sort((a,b) => b.score - a.score || a.order - b.order);
+      return ranked[0];
+    }
+
+    function showResult() {
+      const chosen = getClass();
+      progress.style.width = '100%';
+      quiz.classList.add('hidden');
+      result.classList.remove('hidden');
+      result.innerHTML = `<div class="result-mark" aria-hidden="true">✦</div><p class="eyebrow">Your ArcheAge class is</p><h2>${chosen.name}</h2><p class="role">${chosen.role}</p><div class="skillsets">${chosen.sets.map(set => `<span class="skill">${set}</span>`).join('')}</div><p class="description">${chosen.desc}</p><p class="match"><strong>Why it fits:</strong> ${chosen.match}</p><div class="actions"><button class="action" id="copy">Copy my result</button><button class="action" id="again">Take it again</button></div>`;
+      document.getElementById('again').addEventListener('click', restart);
+      document.getElementById('copy').addEventListener('click', () => copyResult(chosen));
+    }
+
+    async function copyResult(chosen) {
+      const button = document.getElementById('copy');
+      const text = `I got ${chosen.name} in “What ArcheAge Class Are You?” — ${chosen.sets.join(' + ')}.`;
+      try { await navigator.clipboard.writeText(text); button.textContent = 'Copied!'; }
+      catch { button.textContent = text; }
+      setTimeout(() => button.textContent = 'Copy my result', 1800);
+    }
+
+    function restart() { index = 0; scores = {}; answerHistory = []; result.classList.add('hidden'); quiz.classList.remove('hidden'); renderQuestion(); window.scrollTo({ top:0, behavior:'smooth' }); }
+    renderQuestion();
+  </script>
+</body>
 </html>
