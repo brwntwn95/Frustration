@@ -1,62 +1,90 @@
-# Frustration Rummy Web
+# The Team Test — Preservation Recreation
 
-A small web multiplayer version of Frustration Rummy designed for easy family play.
+A clean-room, multiplayer browser recreation inspired by the Swedish Armed Forces' 2010 **The Team Test** campaign.
 
-## Run Locally
+This repository contains original code and recreated geometric UI. It does **not** contain the original site's source code, Swedish Armed Forces logos, voice recordings, music, or proprietary artwork.
 
-```powershell
-node server.js
+## What is implemented
+
+- Four-player real-time multiplayer using Socket.IO.
+- Public matchmaking or private team rooms.
+- Private invite URLs in the old-style `#/private/TEAMCODE` format.
+- Four player colours: red, blue, yellow and green.
+- Full four-quadrant test board visible to every player.
+- Shared live mouse cursors.
+- Interdependent life system: completing your task gives a life point to the next player.
+- Team fails when a player reaches zero.
+- Increasing difficulty as the test continues.
+- Memory, concentration, spatial-thinking and multitasking tests.
+- Recreated team-number round: numbered circles must be removed in order by the player whose colour owns each circle.
+- End-of-test team time and category results.
+- Synthesised UI sounds generated in-browser, so no audio files are required.
+
+## Run locally
+
+Install Node.js 20+.
+
+```bash
+npm install
+npm start
 ```
 
-Open `http://localhost:3000`, create a game, then text the four-character code to the other players.
+Open:
 
-## Deploy
+```text
+http://localhost:10000
+```
 
-This app is intentionally simple:
+Open it in four browser windows/devices, create a private team in one, then use the invite URL in the other three.
 
-- one Node process
-- no database
-- static files served from `public`
-- WebSocket game rooms kept in memory
+## Deploy on Render
 
-Good low-cost hosting options are a small AWS Lightsail instance, Fly.io, Render, Railway, or any VPS that can run Node. Set the `PORT` environment variable if your host requires a specific port.
+This project is intended to be a **Web Service**, rather than a Render Static Site, because Socket.IO needs a live Node server and WebSocket connections.
 
-### Render
+### Option A — existing Render service
 
-Use a **Web Service**, not a Static Site. The page can load as static files, but joining and playing needs the Node server because game rooms and WebSocket messages live there.
+1. Push this folder to a GitHub repository.
+2. In Render, create or repoint a **Web Service** to the repo.
+3. Runtime: `Node`.
+4. Build command: `npm install`
+5. Start command: `npm start`
+6. Health check path: `/health`
+7. Deploy.
 
-Render settings:
+The server listens on Render's `PORT` environment variable and binds to `0.0.0.0`.
 
-- Runtime: Node
-- Build command: `npm install`
-- Start command: `npm start`
-- Health check path: `/health`
+### Option B — Blueprint
 
-If the front page loads but says it cannot connect, check that the deployed service is a Web Service and that the browser console is not showing a failed `wss://...` WebSocket request. A failed WebSocket usually means the Node process is not handling the site, or the host is not forwarding WebSocket upgrades.
+The included `render.yaml` can be used as a Render Blueprint.
 
-## Family Rules From The Sheets
+## Historical reconstruction notes
 
-The contract list is in `server.js` under `CONTRACTS`.
+Public surviving material confirms the original was a four-player multiplayer test built around teamwork, with memory, concentration, spatial thinking and multitasking challenges. Players were assigned red, blue, yellow and green. A player's successful work supported another player instead of simply benefiting themselves, and the whole test ended when a member ran out of life/time.
 
-Current assumptions:
+Surviving screenshots and player descriptions also document:
+- number/colour memory;
+- shape/colour memory;
+- searching grids of 9s and 6s;
+- a mirrored-circle obstacle task;
+- a team task where numbered coloured circles must be clicked in numerical order by the player assigned that colour;
+- increasingly fast pacing;
+- an end screen showing total survival time and category bars.
 
-- 2 combined decks, with jokers removed
-- 10 cards per player plus one discard
-- 2s are wild and can stand in for any card
-- Melds must contain more natural cards than wild cards, except a pair may be one natural card plus one wild 2
-- Ordinary runs can use mixed suits
-- Hand 13 is the special black-or-red run
-- Players cannot lay down during the first round of turns
-- Players draw, optionally lay down/add to melds, then discard
-- Cards are private until a player lays down
-- Players who lay down advance to the next hand after the round; players who did not lay down stay on their current hand
-- Going out scores minus 20
-- Cards left in hand score: 2s and Aces 20, 3-10 face value, J/Q/K 10
-- Hands 15 and 19 are down-and-out hands
-- Hands 20 and 21 are down-and-out with no discard
+This recreation deliberately uses original implementation code rather than recovered proprietary source.
 
-The physical-sheet dealer bonus for cutting the exact number of cards is not automated, because the web game shuffles and deals without a manual cut step.
+## Accuracy / next preservation pass
 
-## Notes
+This version is playable, but the historical record is incomplete. For a closer visual and behavioural reconstruction, the next pass should compare the game against surviving videos/screenshots frame by frame and add:
 
-Room state is in memory. If the server restarts, active games are lost. For a family table this is usually fine; for public hosting, add persistence and reconnect tokens.
+- the mirrored two-circle obstacle course;
+- any missing geometric assembly tests;
+- closer timing curves;
+- exact intro/instruction wording where independently documented;
+- exact historical layout proportions and transition timing;
+- optional replacement audio hooks for legally obtained archival audio.
+
+The core networking and room architecture are already separated enough that those tests can be added without rewriting multiplayer.
+
+## Attribution
+
+Unofficial fan preservation project. "Försvarsmakten" and Swedish Armed Forces branding belong to their respective rights holders. This project is neither affiliated with nor endorsed by the Swedish Armed Forces.

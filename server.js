@@ -1,730 +1,535 @@
-const http = require("http");
-const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
+const http = require("http");
+const express = require("express");
+const { Server } = require("socket.io");
 
-const PORT = Number(process.env.PORT || 3000);
-const PUBLIC_DIR = path.join(__dirname, "public");
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  transports: ["websocket", "polling"],
+  pingInterval: 10000,
+  pingTimeout: 20000
+});
+
+const PORT = process.env.PORT || 10000;
+const HOST = "0.0.0.0";
+
+app.use(express.static(path.join(__dirname, "public")));
+app.get("/health", (_, res) => res.status(200).send("ok"));
+
+const COLORS = [
+  { key: "red", hex: "#df2d2d", label: "RED" },
+  { key: "blue", hex: "#2d67df", label: "BLUE" },
+  { key: "yellow", hex: "#e9b718", label: "YELLOW" },
+  { key: "green", hex: "#33ad55", label: "GREEN" }
+];
+
 const rooms = new Map();
+const PUBLIC_ROOM = "__PUBLIC__";
+const START_LIFE = 7;
+const MAX_LIFE = 10;
+const TEAM_ROUND_INTERVAL_MS = 45000;
+const TEAM_ROUND_DURATION_MS = 12000;
 
-const CONTRACTS = [
-  { label: "2 x 3 of a kind", requirements: [setNeed(3), setNeed(3)] },
-  { label: "1 x 3 of a kind + 1 x run of 3", requirements: [setNeed(3), runNeed(3)] },
-  { label: "1 x run of 7 + a pair of Aces", requirements: [runNeed(7), setNeed(2, "A")] },
-  { label: "1 x 4 of a kind + 1 x run of 4", requirements: [setNeed(4), runNeed(4)] },
-  { label: "A run of 8 from Jack down", requirements: [runNeed(8, { start: 4 })] },
-  { label: "1 x pair + 1 x run of 5", requirements: [setNeed(2), runNeed(5)] },
-  { label: "1 x 3 of a kind + 1 x run of 5", requirements: [setNeed(3), runNeed(5)] },
-  { label: "A pair of Queens + 1 x run of 4", requirements: [setNeed(2, "Q"), runNeed(4)] },
-  { label: "2 x 4 of a kind", requirements: [setNeed(4), setNeed(4)] },
-  { label: "A run of 9", requirements: [runNeed(9)] },
-  { label: "1 x pair + 1 x 3 of a kind", requirements: [setNeed(2), setNeed(3)] },
-  { label: "1 x 4 of a kind + 2 pairs", requirements: [setNeed(4), setNeed(2), setNeed(2)] },
-  { label: "A run of 9, all black or all red", requirements: [runNeed(9, { mode: "color" })] },
-  { label: "3 x 3 of a kind", requirements: [setNeed(3), setNeed(3), setNeed(3)] },
-  { label: "A run of 10 (down and out)", requirements: [runNeed(10)], downAndOut: true },
-  { label: "A pair of Kings + 1 x run of 6", requirements: [setNeed(2, "K"), runNeed(6)] },
-  { label: "1 x 3 of a kind + 1 x run of 6", requirements: [setNeed(3), runNeed(6)] },
-  { label: "A pair of 9s + 2 x 3 of a kind", requirements: [setNeed(2, "9"), setNeed(3), setNeed(3)] },
-  { label: "1 x 5 of a kind + 1 x run of 5 (down and out)", requirements: [setNeed(5), runNeed(5)], downAndOut: true },
-  { label: "A run of 11 (down and out, no discard)", requirements: [runNeed(11)], noDiscardOut: true },
-  { label: "1 x 6 of a kind + 1 x run of 5 (down and out, no discard)", requirements: [setNeed(6), runNeed(5)], noDiscardOut: true }
-];
-
-function setNeed(size, rank = null) {
-  return { type: "set", size, rank };
+function randomCode(len = 8) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
 }
 
-function runNeed(size, options = {}) {
-  return { type: "run", size, mode: options.mode || "any", start: options.start || null };
+function shuffled(arr) {
+  return [...arr].sort(() => Math.random() - 0.5);
 }
 
-const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-const RANKS = [
-  { rank: "A", value: 1 },
-  { rank: "2", value: 2 },
-  { rank: "3", value: 3 },
-  { rank: "4", value: 4 },
-  { rank: "5", value: 5 },
-  { rank: "6", value: 6 },
-  { rank: "7", value: 7 },
-  { rank: "8", value: 8 },
-  { rank: "9", value: 9 },
-  { rank: "10", value: 10 },
-  { rank: "J", value: 11 },
-  { rank: "Q", value: 12 },
-  { rank: "K", value: 13 }
-];
-
-function makeDeck() {
-  const cards = [];
-  for (let deck = 0; deck < 2; deck += 1) {
-    for (const suit of SUITS) {
-      for (const rank of RANKS) {
-        cards.push({
-          id: `${deck}-${suit}-${rank.rank}`,
-          suit,
-          rank: rank.rank,
-          value: rank.value,
-          wild: rank.rank === "2",
-          label: `${rank.rank}${suit[0].toUpperCase()}`
-        });
-      }
-    }
-  }
-  return shuffle(cards);
-}
-
-function suitSymbol(suit) {
-  return { hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠" }[suit] || "";
-}
-
-function shuffle(cards) {
-  const copy = cards.slice();
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-function code() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let value = "";
-  do {
-    value = Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
-  } while (rooms.has(value));
-  return value;
-}
-
-function uid() {
-  return crypto.randomBytes(10).toString("hex");
-}
-
-function createRoom(hostName) {
-  const room = {
-    code: code(),
-    players: [],
-    hostId: null,
-    status: "lobby",
-    round: 1,
-    stock: [],
-    discard: [],
-    melds: [],
-    turnIndex: 0,
-    turnsTaken: 0,
-    mustDraw: true,
-    lastWinnerId: null,
-    log: []
+function makeRoom(code, isPublic = false) {
+  return {
+    code,
+    isPublic,
+    players: new Array(4).fill(null),
+    started: false,
+    finished: false,
+    createdAt: Date.now(),
+    startAt: 0,
+    life: [START_LIFE, START_LIFE, START_LIFE, START_LIFE],
+    stats: Array.from({ length: 4 }, () => ({
+      memory: { ok: 0, total: 0 },
+      concentration: { ok: 0, total: 0 },
+      spatial: { ok: 0, total: 0 },
+      multitasking: { ok: 0, total: 0 }
+    })),
+    challenges: [null, null, null, null],
+    teamRound: null,
+    nextTeamRoundAt: 0,
+    tickTimer: null,
+    challengeCounter: 0
   };
-  rooms.set(room.code, room);
-  const player = addPlayer(room, hostName);
-  room.hostId = player.id;
-  return { room, player };
 }
 
-function addPlayer(room, name) {
-  if (room.status !== "lobby") throw new Error("This game has already started.");
-  if (room.players.length >= 8) throw new Error("This table is full.");
-  const player = {
-    id: uid(),
-    name: cleanName(name),
-    hand: [],
-    contractIndex: 0,
-    score: 0,
-    laidDown: false,
-    tableIntent: { hoverIndex: null, selectedIndices: [] },
-    connected: true,
-    socket: null
-  };
-  room.players.push(player);
-  return player;
-}
-
-function cleanName(name) {
-  const trimmed = String(name || "").trim().slice(0, 24);
-  return trimmed || "Player";
-}
-
-function startRound(room) {
-  room.status = "playing";
-  room.stock = makeDeck();
-  room.discard = [];
-  room.melds = [];
-  room.mustDraw = true;
-  room.turnsTaken = 0;
-  room.players.forEach((player) => {
-    player.hand = [];
-    player.laidDown = false;
-    for (let i = 0; i < 10; i += 1) player.hand.push(room.stock.pop());
-  });
-  room.discard.push(room.stock.pop());
-  if (room.lastWinnerId) {
-    const next = room.players.findIndex((player) => player.id === room.lastWinnerId);
-    room.turnIndex = next >= 0 ? (next + 1) % room.players.length : 0;
-  } else {
-    room.turnIndex = 0;
+function publicRoomForJoin() {
+  for (const room of rooms.values()) {
+    if (room.isPublic && !room.started && room.players.filter(Boolean).length < 4) return room;
   }
-  addLog(room, `Round ${room.round} started. ${currentPlayer(room).name} plays first.`);
+  const code = `P-${randomCode(6)}`;
+  const room = makeRoom(code, true);
+  rooms.set(code, room);
+  return room;
 }
 
-function currentPlayer(room) {
-  return room.players[room.turnIndex];
+function sanitizeName(name) {
+  const clean = String(name || "").replace(/[<>]/g, "").trim().slice(0, 18);
+  return clean || "ANONYMOUS";
 }
 
-function addLog(room, message) {
-  room.log.unshift({ id: uid(), message, at: new Date().toISOString() });
-  room.log = room.log.slice(0, 30);
-}
-
-function draw(room, player, pile) {
-  ensureTurn(room, player);
-  if (!room.mustDraw) throw new Error("You have already drawn. Lay down or discard.");
-  clearIntent(player);
-  if (pile === "discard") {
-    if (!room.discard.length) throw new Error("The discard pile is empty.");
-    player.hand.push(room.discard.pop());
-    addLog(room, `${player.name} picked up the discard.`);
-  } else {
-    if (!room.stock.length) recycleDiscard(room);
-    if (!room.stock.length) throw new Error("No cards left to draw.");
-    player.hand.push(room.stock.pop());
-    addLog(room, `${player.name} drew from the stock.`);
-  }
-  room.mustDraw = false;
-}
-
-function recycleDiscard(room) {
-  if (room.discard.length <= 1) return;
-  const top = room.discard.pop();
-  room.stock = shuffle(room.discard);
-  room.discard = [top];
-  addLog(room, "The discard pile was shuffled into a new stock.");
-}
-
-function layDown(room, player, groups) {
-  ensureTurn(room, player);
-  if (room.mustDraw) throw new Error("Draw a card before laying down.");
-  if (player.laidDown) throw new Error("You have already laid down this round.");
-  if (room.turnsTaken < room.players.length) throw new Error("You cannot lay down on the first round of turns.");
-  clearIntent(player);
-  const normalized = normalizeGroups(player, groups);
-  const contract = CONTRACTS[player.contractIndex] || CONTRACTS[CONTRACTS.length - 1];
-  const validation = validateContract(normalized, contract);
-  if (!validation.ok) throw new Error(validation.reason);
-
-  const used = new Set(normalized.flatMap((group) => group.cards.map((card) => card.id)));
-  if (contract.noDiscardOut && used.size !== player.hand.length) {
-    throw new Error("This hand is down and out with no discard, so every card must be laid down.");
-  }
-  if (contract.downAndOut && player.hand.length - used.size > 1) {
-    throw new Error("This hand is down and out, so you must be able to discard your last card.");
-  }
-  player.hand = player.hand.filter((card) => !used.has(card.id));
-  player.laidDown = true;
-  normalized.forEach((group) => {
-    room.melds.push({
-      id: uid(),
-      ownerId: player.id,
-      ownerName: player.name,
-      type: group.type,
-      mode: group.mode || null,
-      cards: sortGroupCards(group.cards, group.type)
-    });
-  });
-  addLog(room, `${player.name} laid down: ${contract.label}.`);
-  if (player.hand.length === 0) finishRound(room, player);
-}
-
-function normalizeGroups(player, groups) {
-  if (!Array.isArray(groups) || groups.length === 0) throw new Error("Choose cards to lay down first.");
-  const handById = new Map(player.hand.map((card) => [card.id, card]));
-  const seen = new Set();
-  return groups.map((group) => {
-    const cards = (group.cards || []).map((id) => {
-      if (!handById.has(id)) throw new Error("One of those cards is not in your hand.");
-      if (seen.has(id)) throw new Error("A card cannot be used twice.");
-      seen.add(id);
-      return handById.get(id);
-    });
-    const type = group.type === "run" || group.type === "set" ? group.type : "auto";
-    return { type, cards };
-  });
-}
-
-function validateContract(groups, contract) {
-  const expected = contract.requirements || [];
-  if (groups.length !== expected.length) return { ok: false, reason: `This round needs ${contract.label}.` };
-
-  const remaining = groups.slice();
-  for (const need of expected) {
-    const index = remaining.findIndex((group) => {
-      if (group.type !== "auto" && group.type !== need.type) return false;
-      return matchesRequirement(group.cards, need);
-    });
-    if (index === -1) return { ok: false, reason: `Those cards do not satisfy: ${contract.label}.` };
-    remaining[index].type = need.type;
-    remaining[index].mode = need.mode || null;
-    remaining.splice(index, 1);
-  }
-  return { ok: true };
-}
-
-function matchesRequirement(cards, need) {
-  if (cards.length !== need.size) return false;
-  if (need.type === "set") return isValidSet(cards, need.rank);
-  return isValidRun(cards, need);
-}
-
-function isValidGroup(group) {
-  if (group.type === "set") return isValidSet(group.cards);
-  return isValidRun(group.cards, { size: group.cards.length, mode: group.mode || "any" });
-}
-
-function isValidSet(cards, rank = null) {
-  if (!hasEnoughNaturals(cards)) return false;
-  const natural = cards.filter((card) => !card.wild);
-  if (rank) return natural.every((card) => card.rank === rank);
-  if (!natural.length) return false;
-  return natural.every((card) => card.rank === natural[0].rank);
-}
-
-function isValidRun(cards, need = {}) {
-  return validateRun(cards, need).ok;
-}
-
-function validateRun(cards, need = {}) {
-  if (!hasEnoughNaturals(cards)) return { ok: false, reason: "A meld needs more natural cards than wild cards." };
-  const mode = need.mode || "any";
-  const natural = cards.filter((card) => !card.wild);
-  const wildCount = cards.length - natural.length;
-  if (mode === "color") {
-    const colors = new Set(natural.map(cardColor));
-    if (colors.size > 1) return { ok: false, reason: "Hand 13 runs must be all black or all red." };
-  }
-  const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
-  if (values.length !== natural.length) return { ok: false, reason: "A run cannot use two natural cards with the same number." };
-  const starts = orderedRunStarts(cards.length, values, need.start);
-  let best = null;
-  for (const start of starts) {
-    let missing = 0;
-    const missingValues = [];
-    const end = start + cards.length - 1;
-    const outside = values.filter((value) => value < start || value > end);
-    for (let v = start; v < start + cards.length; v += 1) {
-      if (!values.includes(v)) {
-        missing += 1;
-        missingValues.push(v);
-      }
-    }
-    if (!outside.length && missing <= wildCount) return { ok: true };
-    best = bestRunCandidate(best, { missing, missingValues, outside, start });
-  }
-  return { ok: false, reason: runFailureReason(best, wildCount) };
-}
-
-function findRunLayout(cards, need = {}) {
-  const validation = validateRun(cards, need);
-  if (!validation.ok) return null;
-  const natural = cards.filter((card) => !card.wild);
-  const wilds = cards.filter((card) => card.wild).sort((a, b) => a.id.localeCompare(b.id));
-  const values = [...new Set(natural.map((card) => card.value))].sort((a, b) => a - b);
-  const starts = orderedRunStarts(cards.length, values, need.start);
-  const start = starts.find((candidate) => {
-    const end = candidate + cards.length - 1;
-    const outside = values.some((value) => value < candidate || value > end);
-    if (outside) return false;
-    let missing = 0;
-    for (let value = candidate; value <= end; value += 1) {
-      if (!values.includes(value)) missing += 1;
-    }
-    return missing <= wilds.length;
-  });
-  if (!start) return null;
-  const naturalByValue = new Map(natural.map((card) => [card.value, card]));
-  let wildIndex = 0;
-  return Array.from({ length: cards.length }, (_, index) => {
-    const value = start + index;
-    return naturalByValue.get(value) || wilds[wildIndex++];
-  });
-}
-
-function bestRunCandidate(current, candidate) {
-  if (!current) return candidate;
-  const currentScore = current.outside.length * 4 + current.missing;
-  const candidateScore = candidate.outside.length * 4 + candidate.missing;
-  return candidateScore < currentScore ? candidate : current;
-}
-
-function orderedRunStarts(length, values, fixedStart = null) {
-  if (fixedStart) return [fixedStart];
-  const starts = Array.from({ length: 14 - length }, (_, index) => index + 1);
-  if (!values.length) return starts;
-  const lowest = values[0];
-  return starts.sort((a, b) => Math.abs(a - lowest) - Math.abs(b - lowest) || a - b);
-}
-
-function runFailureReason(best, wildCount) {
-  if (!best) return "Those cards do not make a run.";
-  if (best.outside.length) {
-    return `A run must use every card in order. ${rankList(best.outside)} would sit outside the best run.`;
-  }
-  return `That run needs ${rankList(best.missingValues)} as wild card${best.missingValues.length === 1 ? "" : "s"}, but only has ${wildCount}.`;
-}
-
-function rankList(values) {
-  return values.map(valueRank).join(values.length > 1 ? ", " : "");
-}
-
-function valueRank(value) {
-  return { 1: "A", 11: "J", 12: "Q", 13: "K" }[value] || String(value);
-}
-
-function hasEnoughNaturals(cards) {
-  const naturalCount = cards.filter((card) => !card.wild).length;
-  const wildCount = cards.length - naturalCount;
-  if (cards.length === 2) return naturalCount >= 1;
-  return naturalCount > wildCount;
-}
-
-function cardColor(card) {
-  return card.suit === "hearts" || card.suit === "diamonds" ? "red" : "black";
-}
-
-function sortGroupCards(cards, type) {
-  const suitOrder = { hearts: 0, diamonds: 1, clubs: 2, spades: 3, joker: 4 };
-  const sorted = cards.slice();
-  if (type === "run") {
-    return findRunLayout(sorted) || sorted.sort((a, b) => {
-        if (a.wild && b.wild) return a.id.localeCompare(b.id);
-        if (a.wild) return 1;
-        if (b.wild) return -1;
-        return a.value - b.value || suitOrder[a.suit] - suitOrder[b.suit];
-      });
-  }
-  return sorted.sort((a, b) => {
-    if (a.wild && b.wild) return a.id.localeCompare(b.id);
-    if (a.wild) return 1;
-    if (b.wild) return -1;
-    return a.value - b.value || suitOrder[a.suit] - suitOrder[b.suit];
-  });
-}
-
-function addToMeld(room, player, cardId, meldId) {
-  addCardsToMeld(room, player, [cardId], meldId);
-}
-
-function addCardsToMeld(room, player, cardIds, meldId) {
-  ensureTurn(room, player);
-  if (room.mustDraw) throw new Error("Draw a card before adding to melds.");
-  if (!player.laidDown) throw new Error("You must lay down before adding to other melds.");
-  clearIntent(player);
-  const uniqueIds = [...new Set(Array.isArray(cardIds) ? cardIds : [])];
-  if (!uniqueIds.length) throw new Error("Choose at least one card to add.");
-  const cards = uniqueIds.map((id) => player.hand.find((item) => item.id === id));
-  if (cards.some((card) => !card)) throw new Error("One of those cards is not in your hand.");
-  const meld = room.melds.find((item) => item.id === meldId);
-  if (!meld) throw new Error("Meld not found.");
-  const validation = validateMeld({ type: meld.type, mode: meld.mode, cards: [...meld.cards, ...cards] });
-  if (!validation.ok) {
-    throw new Error(validation.reason);
-  }
-  const used = new Set(uniqueIds);
-  player.hand = player.hand.filter((item) => !used.has(item.id));
-  meld.cards.push(...cards);
-  meld.cards = sortGroupCards(meld.cards, meld.type);
-  addLog(room, `${player.name} added ${cards.length === 1 ? "a card" : `${cards.length} cards`} to ${meld.ownerName}'s meld.`);
-  if (player.hand.length === 0) finishRound(room, player);
-}
-
-function validateMeld(group) {
-  if (group.type === "set") {
-    return isValidSet(group.cards)
-      ? { ok: true }
-      : { ok: false, reason: "Those cards do not fit this set." };
-  }
-  return validateRun(group.cards, { size: group.cards.length, mode: group.mode || "any" });
-}
-
-function discard(room, player, cardId) {
-  ensureTurn(room, player);
-  if (room.mustDraw) throw new Error("Draw a card before discarding.");
-  clearIntent(player);
-  const card = player.hand.find((item) => item.id === cardId);
-  if (!card) throw new Error("That card is not in your hand.");
-  player.hand = player.hand.filter((item) => item.id !== cardId);
-  room.discard.push(card);
-  addLog(room, `${player.name} discarded ${card.label}.`);
-  room.turnsTaken += 1;
-  if (player.hand.length === 0) finishRound(room, player);
-  else {
-    room.turnIndex = (room.turnIndex + 1) % room.players.length;
-    room.mustDraw = true;
-  }
-}
-
-function finishRound(room, winner) {
-  room.lastWinnerId = winner.id;
-  addLog(room, `${winner.name} went out.`);
-  room.players.forEach((player) => {
-    const points = player.hand.reduce((sum, card) => sum + cardPoints(card), 0);
-    player.score += points;
-    if (player.id === winner.id) player.score -= 20;
-    if ((player.laidDown || player.id === winner.id) && player.contractIndex < CONTRACTS.length) {
-      player.contractIndex += 1;
-    }
-  });
-  if (winner.contractIndex >= CONTRACTS.length) {
-    room.status = "finished";
-    addLog(room, `${winner.name} completed the final contract.`);
-  } else {
-    room.status = "roundOver";
-    room.round += 1;
-  }
-}
-
-function cardPoints(card) {
-  if (card.rank === "A" || card.rank === "2") return 20;
-  if (card.value >= 10) return 10;
-  return card.value;
-}
-
-function ensureTurn(room, player) {
-  if (room.status !== "playing") throw new Error("The game is not currently playing.");
-  if (currentPlayer(room).id !== player.id) throw new Error("It is not your turn.");
-}
-
-function clearIntent(player) {
-  player.tableIntent = { hoverIndex: null, selectedIndices: [] };
-}
-
-function publicState(room, viewer) {
+function roomState(room) {
   return {
     code: room.code,
-    status: room.status,
-    round: room.round,
-    hostId: room.hostId,
-    you: viewer.id,
-    currentPlayerId: room.status === "playing" ? currentPlayer(room).id : null,
-    mustDraw: room.mustDraw,
-    stockCount: room.stock.length,
-    topDiscard: room.discard[room.discard.length - 1] || null,
-    discardCount: room.discard.length,
-    contracts: CONTRACTS,
-    melds: room.melds,
-    log: room.log,
-    players: room.players.map((player) => ({
-      id: player.id,
-      name: player.name,
-      handCount: player.hand.length,
-      contractIndex: player.contractIndex,
-      score: player.score,
-      laidDown: player.laidDown,
-      tableIntent: player.id === viewer.id ? undefined : player.tableIntent,
-      connected: player.connected,
-      isHost: player.id === room.hostId,
-      hand: player.id === viewer.id ? sortHand(player.hand) : undefined
-    }))
+    isPublic: room.isPublic,
+    started: room.started,
+    finished: room.finished,
+    startAt: room.startAt,
+    life: room.life,
+    nextTeamRoundAt: room.nextTeamRoundAt,
+    players: room.players.map((p, i) => p ? ({
+      slot: i,
+      name: p.name,
+      color: COLORS[i],
+      connected: p.connected
+    }) : null),
+    challenges: room.challenges.map(publicChallenge),
+    teamRound: room.teamRound ? {
+      active: true,
+      id: room.teamRound.id,
+      expiresAt: room.teamRound.expiresAt,
+      current: room.teamRound.current,
+      circles: room.teamRound.circles
+    } : null
   };
 }
 
-function sortHand(hand) {
-  const suitOrder = { hearts: 0, diamonds: 1, clubs: 2, spades: 3, joker: 4 };
-  return hand.slice().sort((a, b) => suitOrder[a.suit] - suitOrder[b.suit] || a.value - b.value);
+function publicChallenge(c) {
+  if (!c) return null;
+  const common = {
+    id: c.id,
+    owner: c.owner,
+    type: c.type,
+    category: c.category,
+    expiresAt: c.expiresAt,
+    revealAt: c.revealAt || null
+  };
+  if (c.type === "oddDigit") return { ...common, grid: c.grid };
+  if (c.type === "numberColor") return {
+    ...common,
+    mapping: c.mapping,
+    promptNumber: c.promptNumber,
+    choices: c.choices
+  };
+  if (c.type === "shapeColor") return {
+    ...common,
+    mapping: c.mapping,
+    promptShape: c.promptShape,
+    choices: c.choices
+  };
+  if (c.type === "rotation") return {
+    ...common,
+    base: c.base,
+    options: c.options
+  };
+  if (c.type === "stroop") return {
+    ...common,
+    word: c.word,
+    ink: c.ink,
+    options: c.options,
+    promptMode: c.promptMode
+  };
+  return common;
 }
 
-function broadcast(room, exceptPlayerId = null) {
-  for (const player of room.players) {
-    if (player.id === exceptPlayerId) continue;
-    if (player.socket) send(player.socket, { type: "state", state: publicState(room, player) });
-  }
+function difficulty(room) {
+  if (!room.started) return 0;
+  return Math.min(6, Math.floor((Date.now() - room.startAt) / 30000));
 }
 
-function send(ws, payload) {
-  if (ws.readyState === 1) ws.send(JSON.stringify(payload));
+function taskDuration(room, base = 8500) {
+  return Math.max(3600, base - difficulty(room) * 650);
 }
 
-function handleMessage(ws, message) {
-  let data;
-  try {
-    data = JSON.parse(message);
-  } catch {
-    send(ws, { type: "error", message: "That message was not understood." });
-    return;
+function createChallenge(room, owner) {
+  const types = ["oddDigit", "numberColor", "shapeColor", "rotation", "stroop"];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const id = `${room.code}-${++room.challengeCounter}`;
+  const now = Math.max(Date.now(), room.startAt || 0);
+
+  if (type === "oddDigit") {
+    const size = difficulty(room) >= 3 ? 7 : 6;
+    const majority = Math.random() < 0.5 ? "9" : "6";
+    const odd = majority === "9" ? "6" : "9";
+    const count = size * size;
+    const oddIndex = Math.floor(Math.random() * count);
+    const grid = Array.from({ length: count }, (_, i) => i === oddIndex ? odd : majority);
+    return {
+      id, owner, type, category: "concentration",
+      grid, answer: oddIndex,
+      expiresAt: now + taskDuration(room, 8000)
+    };
   }
-  try {
-    if (data.type === "create") {
-      const { room, player } = createRoom(data.name);
-      player.socket = ws;
-      ws.playerId = player.id;
-      ws.roomCode = room.code;
-      addLog(room, `${player.name} created the game.`);
-      broadcast(room);
-      return;
-    }
 
-    if (data.type === "join") {
-      const room = rooms.get(String(data.code || "").toUpperCase());
-      if (!room) throw new Error("Game code not found.");
-      const player = addPlayer(room, data.name);
-      player.socket = ws;
-      ws.playerId = player.id;
-      ws.roomCode = room.code;
-      addLog(room, `${player.name} joined the table.`);
-      broadcast(room);
-      return;
-    }
-
-    const { room, player } = getSession(ws);
-    if (data.type === "start") {
-      if (player.id !== room.hostId) throw new Error("Only the host can start the game.");
-      if (room.players.length < 2) throw new Error("You need at least two players.");
-      startRound(room);
-    } else if (data.type === "nextRound") {
-      if (player.id !== room.hostId) throw new Error("Only the host can start the next round.");
-      if (room.status !== "roundOver") throw new Error("The round is not over.");
-      startRound(room);
-    } else if (data.type === "draw") draw(room, player, data.pile);
-    else if (data.type === "layDown") layDown(room, player, data.groups);
-    else if (data.type === "addToMeld") addToMeld(room, player, data.cardId, data.meldId);
-    else if (data.type === "addCardsToMeld") addCardsToMeld(room, player, data.cardIds, data.meldId);
-    else if (data.type === "discard") discard(room, player, data.cardId);
-    else if (data.type === "intent") {
-      player.tableIntent = {
-        hoverIndex: Number.isInteger(data.hoverIndex) ? data.hoverIndex : null,
-        selectedIndices: Array.isArray(data.selectedIndices)
-          ? data.selectedIndices.filter(Number.isInteger).slice(0, 6)
-          : []
-      };
-      broadcast(room, player.id);
-      return;
-    }
-    else throw new Error("Unknown action.");
-    broadcast(room);
-  } catch (error) {
-    send(ws, { type: "error", message: error.message });
+  if (type === "numberColor") {
+    const nums = shuffled([1,2,3,4,5,6]).slice(0, 3);
+    const cols = shuffled(COLORS.map(c => c.key)).slice(0, 3);
+    const mapping = nums.map((n, i) => ({ n, color: cols[i] }));
+    const pick = mapping[Math.floor(Math.random() * mapping.length)];
+    return {
+      id, owner, type, category: "memory",
+      mapping, promptNumber: pick.n, choices: shuffled(cols),
+      answer: pick.color,
+      revealAt: now + 1800,
+      expiresAt: now + taskDuration(room, 9500)
+    };
   }
-}
 
-function getSession(ws) {
-  const room = rooms.get(ws.roomCode);
-  if (!room) throw new Error("You are not in a room.");
-  const player = room.players.find((item) => item.id === ws.playerId);
-  if (!player) throw new Error("You are not seated at this table.");
-  return { room, player };
-}
-
-function handleClose(ws) {
-  const room = rooms.get(ws.roomCode);
-  if (!room) return;
-  const player = room.players.find((item) => item.id === ws.playerId);
-  if (!player) return;
-  player.connected = false;
-  player.socket = null;
-  addLog(room, `${player.name} disconnected.`);
-  broadcast(room);
-}
-
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  if (url.pathname === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ ok: true }));
-    return;
+  if (type === "shapeColor") {
+    const shapes = shuffled(["circle", "triangle", "square", "diamond"]).slice(0, 3);
+    const cols = shuffled(COLORS.map(c => c.key)).slice(0, 3);
+    const mapping = shapes.map((shape, i) => ({ shape, color: cols[i] }));
+    const pick = mapping[Math.floor(Math.random() * mapping.length)];
+    return {
+      id, owner, type, category: "memory",
+      mapping, promptShape: pick.shape, choices: shuffled(cols),
+      answer: pick.color,
+      revealAt: now + 1800,
+      expiresAt: now + taskDuration(room, 9500)
+    };
   }
-  const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
-  const filePath = path.normalize(path.join(PUBLIC_DIR, pathname));
-  if (!filePath.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
-  }
-  fs.readFile(filePath, (err, content) => {
-    if (err) {
-      res.writeHead(404);
-      res.end("Not found");
-      return;
-    }
-    res.writeHead(200, { "Content-Type": contentType(filePath) });
-    res.end(content);
-  });
-});
 
-function contentType(filePath) {
-  if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
-  if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
-  if (filePath.endsWith(".js")) return "application/javascript; charset=utf-8";
-  return "application/octet-stream";
-}
-
-server.on("upgrade", (req, socket) => {
-  if (String(req.headers.upgrade || "").toLowerCase() !== "websocket") {
-    socket.destroy();
-    return;
+  if (type === "rotation") {
+    const dirs = [0, 90, 180, 270];
+    const base = dirs[Math.floor(Math.random() * dirs.length)];
+    const turn = shuffled([90, 180, 270])[0];
+    const answer = (base + turn) % 360;
+    return {
+      id, owner, type, category: "spatial",
+      base: { angle: base, turn },
+      options: shuffled(dirs),
+      answer,
+      expiresAt: now + taskDuration(room, 7600)
+    };
   }
-  const key = req.headers["sec-websocket-key"];
-  if (!key) {
-    socket.destroy();
-    return;
-  }
-  const accept = crypto.createHash("sha1").update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
-  socket.write([
-    "HTTP/1.1 101 Switching Protocols",
-    "Upgrade: websocket",
-    "Connection: Upgrade",
-    `Sec-WebSocket-Accept: ${accept}`,
-    "",
-    ""
-  ].join("\r\n"));
-  const ws = wrapSocket(socket);
-  socket.on("data", (buffer) => decodeFrames(buffer).forEach((text) => handleMessage(ws, text)));
-  socket.on("close", () => handleClose(ws));
-  socket.on("error", () => handleClose(ws));
-});
 
-function wrapSocket(socket) {
+  const words = ["RED", "BLUE", "YELLOW", "GREEN"];
+  const inkKeys = COLORS.map(c => c.key);
+  const word = words[Math.floor(Math.random() * words.length)];
+  const wordKey = word.toLowerCase();
+  const ink = inkKeys[Math.floor(Math.random() * inkKeys.length)];
+  const askInk = Math.random() < 0.5;
   return {
-    readyState: 1,
-    roomCode: null,
-    playerId: null,
-    send(text) {
-      const payload = Buffer.from(text);
-      const header = payload.length < 126
-        ? Buffer.from([0x81, payload.length])
-        : Buffer.from([0x81, 126, payload.length >> 8, payload.length & 255]);
-      socket.write(Buffer.concat([header, payload]));
-    }
+    id, owner, type: "stroop", category: "multitasking",
+    word, ink, options: inkKeys,
+    promptMode: askInk ? "ink" : "word",
+    answer: askInk ? ink : wordKey,
+    expiresAt: now + taskDuration(room, 7200)
   };
 }
 
-function decodeFrames(buffer) {
-  const frames = [];
-  let offset = 0;
-  while (offset < buffer.length) {
-    const byte1 = buffer[offset++];
-    const byte2 = buffer[offset++];
-    const masked = Boolean(byte2 & 0x80);
-    let length = byte2 & 0x7f;
-    if (length === 126) {
-      length = buffer.readUInt16BE(offset);
-      offset += 2;
-    } else if (length === 127) {
-      length = Number(buffer.readBigUInt64BE(offset));
-      offset += 8;
-    }
-    const mask = masked ? buffer.slice(offset, offset + 4) : null;
-    if (masked) offset += 4;
-    const payload = buffer.slice(offset, offset + length);
-    offset += length;
-    if ((byte1 & 0x0f) === 8) continue;
-    if (mask) {
-      for (let i = 0; i < payload.length; i += 1) payload[i] ^= mask[i % 4];
-    }
-    frames.push(payload.toString("utf8"));
-  }
-  return frames;
+function emitRoom(room) {
+  io.to(room.code).emit("roomState", roomState(room));
 }
 
-server.listen(PORT, () => {
-  console.log(`Frustration web app running at http://localhost:${PORT}`);
+function startRoom(room) {
+  if (room.started || room.finished) return;
+  room.started = true;
+  room.startAt = Date.now() + 3500;
+  room.nextTeamRoundAt = room.startAt + TEAM_ROUND_INTERVAL_MS;
+  for (let i = 0; i < 4; i++) room.challenges[i] = createChallenge(room, i);
+  emitRoom(room);
+  io.to(room.code).emit("gameStarting", { startAt: room.startAt });
+
+  room.tickTimer = setInterval(() => tickRoom(room), 200);
+}
+
+function scoreCategory(room, slot, category, ok) {
+  const s = room.stats[slot][category];
+  s.total++;
+  if (ok) s.ok++;
+}
+
+function successChallenge(room, slot, challenge) {
+  scoreCategory(room, slot, challenge.category, true);
+  const recipient = (slot + 1) % 4;
+  room.life[recipient] = Math.min(MAX_LIFE, room.life[recipient] + 1);
+  io.to(room.code).emit("feedback", { slot, ok: true, recipient });
+  room.challenges[slot] = createChallenge(room, slot);
+}
+
+function failChallenge(room, slot, challenge, reason = "wrong") {
+  scoreCategory(room, slot, challenge.category, false);
+  room.life[slot] = Math.max(0, room.life[slot] - 1);
+  io.to(room.code).emit("feedback", { slot, ok: false, reason });
+  if (room.life[slot] <= 0) {
+    finishRoom(room, slot);
+    return;
+  }
+  room.challenges[slot] = createChallenge(room, slot);
+}
+
+function startTeamRound(room) {
+  if (room.teamRound || room.finished) return;
+  const n = 12 + Math.min(8, difficulty(room) * 2);
+  const circles = [];
+  for (let i = 1; i <= n; i++) {
+    const owner = Math.floor(Math.random() * 4);
+    circles.push({
+      n: i,
+      owner,
+      color: COLORS[owner].key,
+      x: 8 + Math.random() * 84,
+      y: 12 + Math.random() * 76
+    });
+  }
+  room.teamRound = {
+    id: `TEAM-${room.code}-${Date.now()}`,
+    circles,
+    current: 1,
+    pausedAt: Date.now(),
+    expiresAt: Date.now() + TEAM_ROUND_DURATION_MS
+  };
+  io.to(room.code).emit("teamRoundStart", roomState(room).teamRound);
+}
+
+function finishTeamRound(room, success) {
+  if (!room.teamRound) return;
+  const pausedFor = Math.max(0, Date.now() - (room.teamRound.pausedAt || Date.now()));
+  for (const c of room.challenges) {
+    if (!c) continue;
+    c.expiresAt += pausedFor;
+    if (c.revealAt) c.revealAt += pausedFor;
+  }
+  if (success) {
+    for (let i = 0; i < 4; i++) {
+      room.life[i] = Math.min(MAX_LIFE, room.life[i] + 1);
+      scoreCategory(room, i, "multitasking", true);
+    }
+    io.to(room.code).emit("teamRoundEnd", { ok: true });
+  } else {
+    for (let i = 0; i < 4; i++) {
+      room.life[i] = Math.max(0, room.life[i] - 1);
+      scoreCategory(room, i, "multitasking", false);
+    }
+    io.to(room.code).emit("teamRoundEnd", { ok: false });
+    const dead = room.life.findIndex(x => x <= 0);
+    if (dead >= 0) {
+      room.teamRound = null;
+      finishRoom(room, dead);
+      return;
+    }
+  }
+  room.teamRound = null;
+  room.nextTeamRoundAt = Date.now() + TEAM_ROUND_INTERVAL_MS;
+  emitRoom(room);
+}
+
+function tickRoom(room) {
+  if (!room.started || room.finished) return;
+  const now = Date.now();
+  if (now < room.startAt) return;
+
+  if (!room.teamRound && now >= room.nextTeamRoundAt) {
+    startTeamRound(room);
+    return;
+  }
+
+  if (room.teamRound) {
+    if (now >= room.teamRound.expiresAt) finishTeamRound(room, false);
+    return;
+  }
+
+  let changed = false;
+  for (let i = 0; i < 4; i++) {
+    const c = room.challenges[i];
+    if (c && now >= c.expiresAt) {
+      failChallenge(room, i, c, "timeout");
+      changed = true;
+      if (room.finished) return;
+    }
+  }
+  if (changed) emitRoom(room);
+}
+
+function finishRoom(room, failedSlot) {
+  if (room.finished) return;
+  room.finished = true;
+  if (room.tickTimer) clearInterval(room.tickTimer);
+  room.tickTimer = null;
+  const elapsedMs = Math.max(0, Date.now() - room.startAt);
+  const categories = ["memory", "concentration", "spatial", "multitasking"];
+  const categoryScores = {};
+  for (const cat of categories) {
+    let ok = 0, total = 0;
+    for (let i = 0; i < 4; i++) {
+      ok += room.stats[i][cat].ok;
+      total += room.stats[i][cat].total;
+    }
+    categoryScores[cat] = total ? ok / total : 0;
+  }
+  io.to(room.code).emit("gameOver", {
+    elapsedMs,
+    failedSlot,
+    categoryScores,
+    life: room.life
+  });
+}
+
+function leaveSocket(socket) {
+  const code = socket.data.roomCode;
+  const slot = socket.data.slot;
+  if (!code || slot == null) return;
+  const room = rooms.get(code);
+  if (!room) return;
+  const p = room.players[slot];
+  if (p && p.socketId === socket.id) {
+    if (room.started && !room.finished) {
+      p.connected = false;
+      io.to(room.code).emit("playerDisconnected", { slot });
+      setTimeout(() => {
+        const current = rooms.get(code);
+        if (!current || current.finished) return;
+        const pp = current.players[slot];
+        if (pp && !pp.connected) {
+          current.life[slot] = 0;
+          finishRoom(current, slot);
+        }
+      }, 20000);
+    } else {
+      room.players[slot] = null;
+      emitRoom(room);
+      if (!room.players.some(Boolean)) rooms.delete(code);
+    }
+  }
+}
+
+io.on("connection", (socket) => {
+  socket.on("join", ({ mode, code, name, reconnectToken }) => {
+    leaveSocket(socket);
+
+    let room;
+    if (mode === "public") {
+      room = publicRoomForJoin();
+    } else {
+      const cleanCode = String(code || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 18);
+      if (!cleanCode) {
+        socket.emit("joinError", "INVALID ROOM CODE");
+        return;
+      }
+      room = rooms.get(cleanCode);
+      if (!room && mode === "create") {
+        room = makeRoom(cleanCode, false);
+        rooms.set(cleanCode, room);
+      }
+      if (!room) {
+        socket.emit("joinError", "TEAM DOES NOT EXIST");
+        return;
+      }
+    }
+
+    if (room.finished) {
+      socket.emit("joinError", "THIS TEST HAS ENDED");
+      return;
+    }
+
+    let slot = -1;
+    if (reconnectToken) {
+      slot = room.players.findIndex(p => p && p.token === reconnectToken && !p.connected);
+    }
+    if (slot < 0) slot = room.players.findIndex(p => !p);
+    if (slot < 0) {
+      socket.emit("joinError", "TEAM IS FULL");
+      return;
+    }
+
+    const token = reconnectToken || randomCode(16);
+    room.players[slot] = {
+      socketId: socket.id,
+      token,
+      connected: true,
+      name: sanitizeName(name)
+    };
+    socket.data.roomCode = room.code;
+    socket.data.slot = slot;
+    socket.join(room.code);
+
+    socket.emit("joined", {
+      code: room.code,
+      slot,
+      color: COLORS[slot],
+      token,
+      state: roomState(room)
+    });
+    emitRoom(room);
+
+    if (!room.started && room.players.filter(Boolean).length === 4) {
+      setTimeout(() => {
+        const current = rooms.get(room.code);
+        if (current && current.players.filter(p => p && p.connected).length === 4) startRoom(current);
+      }, 900);
+    }
+  });
+
+  socket.on("answer", ({ challengeId, value }) => {
+    const room = rooms.get(socket.data.roomCode);
+    const slot = socket.data.slot;
+    if (!room || room.finished || room.teamRound || slot == null) return;
+    const c = room.challenges[slot];
+    if (!c || c.id !== challengeId || Date.now() >= c.expiresAt) return;
+
+    let ok = false;
+    if (c.type === "oddDigit") ok = Number(value) === c.answer;
+    else if (["numberColor", "shapeColor", "stroop"].includes(c.type)) ok = String(value) === String(c.answer);
+    else if (c.type === "rotation") ok = Number(value) === Number(c.answer);
+
+    if (ok) successChallenge(room, slot, c);
+    else failChallenge(room, slot, c, "wrong");
+    if (!room.finished) emitRoom(room);
+  });
+
+  socket.on("teamClick", ({ number }) => {
+    const room = rooms.get(socket.data.roomCode);
+    const slot = socket.data.slot;
+    if (!room || !room.teamRound || room.finished || slot == null) return;
+
+    const target = room.teamRound.circles.find(c => c.n === room.teamRound.current);
+    if (!target) return;
+    if (Number(number) !== target.n || target.owner !== slot) {
+      room.life[slot] = Math.max(0, room.life[slot] - 1);
+      io.to(room.code).emit("feedback", { slot, ok: false, reason: "team-order" });
+      if (room.life[slot] <= 0) {
+        finishRoom(room, slot);
+        return;
+      }
+      emitRoom(room);
+      return;
+    }
+
+    room.teamRound.current++;
+    io.to(room.code).emit("teamRoundProgress", { current: room.teamRound.current });
+    if (room.teamRound.current > room.teamRound.circles.length) {
+      finishTeamRound(room, true);
+    }
+  });
+
+  socket.on("cursor", ({ x, y }) => {
+    const room = rooms.get(socket.data.roomCode);
+    const slot = socket.data.slot;
+    if (!room || slot == null) return;
+    socket.to(room.code).emit("cursor", {
+      slot,
+      x: Math.max(0, Math.min(1, Number(x))),
+      y: Math.max(0, Math.min(1, Number(y)))
+    });
+  });
+
+  socket.on("disconnect", () => leaveSocket(socket));
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`Team Test recreation listening on http://${HOST}:${PORT}`);
 });

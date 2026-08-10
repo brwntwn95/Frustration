@@ -1,14 +1,101 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Frustration Rummy</title>
-    <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body>
-    <main id="app"></main>
-    <div id="toast" role="status" aria-live="polite"></div>
-    <script src="/client.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#050505">
+  <title>The Team Test — Preservation Recreation</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app">
+    <section id="landing" class="screen active">
+      <main class="landing-inner">
+        <div class="mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <h1>DO YOU HAVE WHAT IT TAKES?</h1>
+        <p class="intro">You will form a team with three other people. How well you perform together will decide how you score on the test. Connect when you feel ready.</p>
+        <input id="nameInput" class="name-input" maxlength="18" placeholder="YOUR NAME (OPTIONAL)" autocomplete="off">
+        <div class="button-row">
+          <button id="publicBtn" class="red-btn">CONNECT TO TEAM</button>
+          <button id="createBtn" class="red-btn">CREATE OWN TEAM</button>
+        </div>
+        <div class="join-row">
+          <input id="roomInput" maxlength="18" placeholder="TEAM CODE">
+          <button id="joinBtn" class="dark-btn">JOIN PRIVATE TEAM</button>
+        </div>
+      </main>
+      <footer>
+        <button id="soundToggle" class="text-btn">SOUND: ON</button>
+        <span>UNOFFICIAL PRESERVATION RECREATION</span>
+      </footer>
+    </section>
+
+    <section id="lobby" class="screen">
+      <main class="lobby-inner">
+        <h2>AWAITING PARTICIPANTS</h2>
+        <div id="waitingDots" class="waiting-dots">. . .</div>
+        <div id="playersLobby" class="players-lobby"></div>
+        <div class="team-code-box">
+          <span>YOUR TEAM</span>
+          <strong id="teamCode"></strong>
+          <button id="copyLinkBtn" class="dark-btn">COPY INVITE LINK</button>
+        </div>
+        <p class="small">The test starts automatically when all four positions are occupied.</p>
+      </main>
+    </section>
+
+    <section id="game" class="screen">
+      <header class="game-header">
+        <div id="roomLabel">TEAM</div>
+        <div id="totalTime" class="total-time"><span>TOTAL TIME</span><strong>00:00:00</strong></div>
+        <div id="myColorLabel">YOU ARE</div>
+      </header>
+
+      <main id="board" class="board">
+        <div class="cross-v"></div>
+        <div class="cross-h"></div>
+        <div id="quad0" class="quad q0"></div>
+        <div id="quad1" class="quad q1"></div>
+        <div id="quad2" class="quad q2"></div>
+        <div id="quad3" class="quad q3"></div>
+        <div id="teamOverlay" class="team-overlay hidden"></div>
+        <div id="countdown" class="countdown hidden"></div>
+        <div id="cursors" class="cursors"></div>
+      </main>
+
+      <div id="lifeBar" class="life-bar"></div>
+      <div id="feedbackFlash" class="feedback-flash"></div>
+    </section>
+
+    <section id="results" class="screen">
+      <main class="results-inner">
+        <h2 id="resultTitle">RESULT FOR TEAM</h2>
+        <p>The longer your team stays alive, the better the result. Every correct solution supports somebody else in the chain.</p>
+        <div class="result-grid">
+          <div class="result-time">
+            <span>YOUR TIME</span>
+            <strong id="finalTime">00:00:00</strong>
+            <div class="time-meter"><i id="timeMeterFill"></i><em>AVERAGE</em></div>
+          </div>
+          <div class="result-bars">
+            <h3>YOUR TEAM ABILITY</h3>
+            <div data-cat="memory"><span>MEMORY</span><b><i></i></b></div>
+            <div data-cat="concentration"><span>CONCENTRATION</span><b><i></i></b></div>
+            <div data-cat="spatial"><span>SPATIAL THINKING</span><b><i></i></b></div>
+            <div data-cat="multitasking"><span>MULTITASKING</span><b><i></i></b></div>
+          </div>
+        </div>
+        <div class="button-row">
+          <button id="reconnectBtn" class="red-btn">RECONNECT</button>
+          <button id="leaveBtn" class="dark-btn">LEAVE TEAM</button>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
 </html>
