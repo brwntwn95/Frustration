@@ -863,3 +863,468 @@ footer p {
     scroll-behavior: auto !important;
   }
 }
+
+.squad-stage {
+  min-height: 590px;
+  padding: 34px 0 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.squad-stage-heading {
+  margin-bottom: 22px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.squad-stage-heading > div {
+  display: grid;
+  gap: 6px;
+}
+
+.squad-stage-heading span {
+  color: #55cfe4;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.squad-stage-heading h1 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 54px);
+  font-weight: 950;
+  font-style: italic;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+.squad-stage-heading > strong {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border: 1px solid rgba(240, 100, 45, 0.28);
+  border-radius: 9px;
+  background: rgba(240, 100, 45, 0.1);
+  color: #ff9360;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+}
+
+.squad-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.squad-player-card {
+  position: relative;
+  min-width: 0;
+  min-height: 118px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 15px 4px 15px 4px;
+  background:
+    linear-gradient(130deg, rgba(35, 54, 76, 0.86), rgba(10, 21, 36, 0.94));
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.squad-player-card.has-assignment {
+  border-color: rgba(49, 196, 223, 0.32);
+  box-shadow: 0 12px 28px rgba(3, 11, 21, 0.25);
+}
+
+.squad-player-card.has-assignment:hover {
+  transform: translateY(-2px);
+}
+
+.player-number {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  color: rgba(255, 255, 255, 0.25);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.squad-avatar {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 3px solid rgba(255, 255, 255, 0.78);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #2b435f, #17263b);
+  color: #8fa6b9;
+}
+
+.squad-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.squad-avatar svg {
+  width: 28px;
+  height: 28px;
+}
+
+.squad-player-info {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.squad-player-info > small {
+  overflow: hidden;
+  color: #f58235;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.squad-player-info > strong {
+  overflow: hidden;
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 950;
+  font-style: italic;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.assigned-role {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #b9cad6;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.assigned-role svg {
+  width: 13px;
+  height: 13px;
+}
+
+.assigned-role[data-role='tank'] {
+  color: #74d7eb;
+}
+
+.assigned-role[data-role='damage'] {
+  color: #f38a6a;
+}
+
+.assigned-role[data-role='support'] {
+  color: #62dba0;
+}
+
+.allowed-role-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.allowed-role-pills span {
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #9eb0bf;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.empty-squad {
+  grid-column: 1 / -1;
+  min-height: 250px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.empty-squad svg {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 4px;
+}
+
+.empty-squad strong {
+  color: #e9f1f5;
+}
+
+.empty-squad span {
+  font-size: 12px;
+}
+
+.squad-stage.is-rolling .squad-avatar {
+  animation: squad-roll-pulse 420ms ease-in-out infinite alternate;
+}
+
+.squad-stage.is-rolling .squad-player-card {
+  border-color: rgba(240, 100, 45, 0.34);
+}
+
+@keyframes squad-roll-pulse {
+  from {
+    transform: scale(0.94) rotate(-3deg);
+    filter: brightness(0.8);
+  }
+  to {
+    transform: scale(1.04) rotate(3deg);
+    filter: brightness(1.25);
+  }
+}
+
+.squad-roll-button {
+  width: min(100%, 520px);
+}
+
+.pool-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.pool-switch button {
+  height: 44px;
+  justify-content: flex-start;
+  border-color: var(--border);
+  background: rgba(8, 17, 29, 0.48);
+  color: #c0ced9;
+}
+
+.pool-switch button[aria-pressed='true'] {
+  border-color: rgba(240, 100, 45, 0.55);
+  background: rgba(240, 100, 45, 0.13);
+  color: #fff;
+}
+
+.player-role-list {
+  display: grid;
+  gap: 8px;
+}
+
+.player-role-row {
+  padding: 10px;
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(7, 15, 26, 0.4);
+}
+
+.player-role-row > strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-role-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.player-role-buttons button {
+  min-width: 0;
+  height: 29px;
+  padding-inline: 6px;
+  justify-content: flex-start;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.025);
+  color: #8094a7;
+  font-size: 9px;
+}
+
+.player-role-buttons button[aria-pressed='true'] {
+  border-color: rgba(49, 196, 223, 0.34);
+  background: rgba(49, 196, 223, 0.1);
+  color: #dff9ff;
+}
+
+.player-role-buttons svg {
+  width: 11px;
+  height: 11px;
+}
+
+.role-list-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+
+.role-overview-grid {
+  padding-top: 26px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.role-overview-card {
+  position: relative;
+  min-width: 0;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  border: 1px solid var(--border);
+  border-radius: 13px 4px 13px 4px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.role-overview-card > b {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  color: rgba(255, 255, 255, 0.2);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+}
+
+.role-overview-card > img,
+.overview-placeholder {
+  width: 58px;
+  height: 58px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  background: #223750;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.overview-placeholder svg {
+  width: 20px;
+  color: #8ea3b5;
+}
+
+.role-overview-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.role-overview-card strong,
+.role-overview-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-overview-card strong {
+  font-size: 13px;
+}
+
+.role-overview-card small {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+
+.role-overview-card > div > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.role-overview-card > div > div span {
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 7px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.role-overview-card span[data-role='tank'] {
+  color: #74d7eb;
+}
+
+.role-overview-card span[data-role='damage'] {
+  color: #f38a6a;
+}
+
+.role-overview-card span[data-role='support'] {
+  color: #62dba0;
+}
+
+@media (max-width: 1180px) {
+  .control-panel.squad-controls {
+    display: block;
+  }
+}
+
+@media (max-width: 800px) {
+  .squad-stage {
+    min-height: auto;
+    padding-block: 28px 22px;
+  }
+
+  .squad-board {
+    grid-template-columns: 1fr;
+  }
+
+  .role-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .squad-stage-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .squad-player-card {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  .squad-avatar {
+    width: 70px;
+    height: 70px;
+  }
+
+  .player-role-buttons button span {
+    display: none;
+  }
+
+  .player-role-buttons button {
+    justify-content: center;
+  }
+
+  .role-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}

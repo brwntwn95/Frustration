@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Crosshair,
+  Dices,
   HeartPulse,
   RotateCw,
   Shield,
@@ -12,11 +13,12 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { HEROES, type HeroRole } from './heroes';
+import { HEROES, type Hero, type HeroRole } from './heroes';
 import './roulette.css';
 
 type Mode = 'names' | 'heroes' | 'stadium';
 type RoleFilter = 'all' | HeroRole;
+type SquadPool = 'standard' | 'stadium';
 
 type WheelItem = {
   id: string;
@@ -26,7 +28,19 @@ type WheelItem = {
   stadium?: boolean;
 };
 
-const DEFAULT_NAMES = 'Alex\nJamie\nMorgan\nRiley\nSam\nTaylor';
+type Player = {
+  id: string;
+  name: string;
+};
+
+type SquadAssignment = {
+  playerId: string;
+  playerName: string;
+  hero: Hero;
+};
+
+const DEFAULT_NAMES = 'Alex\nJamie\nMorgan\nRiley\nSam';
+const ALL_ROLES: HeroRole[] = ['tank', 'damage', 'support'];
 
 const WHEEL_COLORS = [
   '#f0642d',
@@ -53,6 +67,12 @@ function randomIndex(length: number) {
     crypto.getRandomValues(buffer);
   } while (buffer[0] >= max);
   return buffer[0] % length;
+}
+
+function RoleGlyph({ role }: { role: HeroRole }) {
+  if (role === 'tank') return <Shield aria-hidden="true" />;
+  if (role === 'damage') return <Crosshair aria-hidden="true" />;
+  return <HeartPulse aria-hidden="true" />;
 }
 
 function Wheel({
@@ -152,9 +172,13 @@ function Wheel({
 }
 
 export default function Home() {
-  const [mode, setMode] = useState<Mode>('heroes');
+  const [mode, setMode] = useState<Mode>('names');
   const [role, setRole] = useState<RoleFilter>('all');
+  const [squadPool, setSquadPool] = useState<SquadPool>('standard');
   const [nameInput, setNameInput] = useState(DEFAULT_NAMES);
+  const [playerRoles, setPlayerRoles] = useState<Record<string, HeroRole[]>>({});
+  const [assignments, setAssignments] = useState<SquadAssignment[]>([]);
+  const [squadRolling, setSquadRolling] = useState(false);
   const [rotation, setRotation] = useState(0);
   const rotationRef = useRef(0);
   const [spinning, setSpinning] = useState(false);
@@ -168,9 +192,10 @@ export default function Home() {
 
   useEffect(() => {
     window.localStorage.setItem('group-up-names', nameInput);
+    setAssignments([]);
   }, [nameInput]);
 
-  const customNames = useMemo(
+  const customNames: Player[] = useMemo(
     () =>
       nameInput
         .split(/[\n,]+/)
@@ -189,19 +214,72 @@ export default function Home() {
     [mode, role],
   );
 
-  const wheelItems: WheelItem[] = mode === 'names' ? customNames : heroPool;
+  const wheelItems: WheelItem[] = heroPool;
   const canSpin = wheelItems.length >= 2 && !spinning;
 
+  function rolesFor(playerId: string) {
+    return playerRoles[playerId] ?? ALL_ROLES;
+  }
+
   function changeMode(nextMode: Mode) {
-    if (spinning) return;
+    if (spinning || squadRolling) return;
     setMode(nextMode);
     setWinner(null);
+    setAssignments([]);
   }
 
   function changeRole(nextRole: RoleFilter) {
     if (spinning) return;
     setRole(nextRole);
     setWinner(null);
+  }
+
+  function changeSquadPool(nextPool: SquadPool) {
+    if (squadRolling) return;
+    setSquadPool(nextPool);
+    setAssignments([]);
+  }
+
+  function togglePlayerRole(playerId: string, selectedRole: HeroRole) {
+    if (squadRolling) return;
+    const current = rolesFor(playerId);
+    const isSelected = current.includes(selectedRole);
+    if (isSelected && current.length === 1) return;
+
+    setPlayerRoles((previous) => ({
+      ...previous,
+      [playerId]: isSelected
+        ? current.filter((item) => item !== selectedRole)
+        : ALL_ROLES.filter((item) => [...current, selectedRole].includes(item)),
+    }));
+    setAssignments([]);
+  }
+
+  function rollSquad() {
+    if (customNames.length === 0 || squadRolling) return;
+
+    const usedHeroes = new Set<string>();
+    const nextAssignments = customNames.map((player) => {
+      const allowedRoles = rolesFor(player.id);
+      const eligible = HEROES.filter(
+        (hero) =>
+          allowedRoles.includes(hero.role) &&
+          (squadPool === 'standard' || hero.stadium),
+      );
+      const unused = eligible.filter((hero) => !usedHeroes.has(hero.key));
+      const available = unused.length > 0 ? unused : eligible;
+      const hero = available[randomIndex(available.length)];
+      usedHeroes.add(hero.key);
+      return { playerId: player.id, playerName: player.name, hero };
+    });
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setAssignments([]);
+    setSquadRolling(true);
+    window.setTimeout(() => {
+      setAssignments(nextAssignments);
+      setSquadRolling(false);
+    }, reducedMotion ? 80 : 650);
   }
 
   function spin() {
@@ -229,9 +307,13 @@ export default function Home() {
     }, spinDuration + 80);
   }
 
+  const assignmentMap = new Map(
+    assignments.map((assignment) => [assignment.playerId, assignment]),
+  );
+
   const poolTitle =
     mode === 'names'
-      ? 'Names on the wheel'
+      ? 'Squad role setup'
       : mode === 'stadium'
         ? 'Stadium hero pool'
         : 'Eligible heroes';
@@ -253,61 +335,151 @@ export default function Home() {
       </header>
 
       <section className="workspace" id="top">
-        <section className="wheel-panel" aria-labelledby="wheel-title">
+        <section
+          className={`wheel-panel ${mode === 'names' ? 'squad-mode' : ''}`}
+          aria-labelledby="wheel-title"
+        >
           <div className="panel-kicker">
             <span>01</span>
-            <p id="wheel-title">Your selection wheel</p>
+            <p id="wheel-title">
+              {mode === 'names' ? 'Roll the whole squad' : 'Your selection wheel'}
+            </p>
           </div>
 
-          <div className="wheel-stage">
-            <Wheel
-              items={wheelItems}
-              rotation={rotation}
-              spinning={spinning}
-              duration={duration}
-            />
+          {mode === 'names' ? (
+            <>
+              <div
+                className={`squad-stage ${squadRolling ? 'is-rolling' : ''}`}
+                aria-live="polite"
+              >
+                <div className="squad-stage-heading">
+                  <div>
+                    <span>{squadPool === 'stadium' ? 'Stadium pool' : 'Full hero pool'}</span>
+                    <h1>Everyone gets a hero</h1>
+                  </div>
+                  <strong>{customNames.length} players</strong>
+                </div>
 
-            <div className={`winner-card ${winner ? 'is-visible' : ''}`} aria-live="polite">
-              {winner ? (
-                <>
-                  {winner.image ? (
-                    <img src={winner.image} alt="" />
-                  ) : (
-                    <span className="winner-initial">{winner.name.charAt(0)}</span>
+                <div className="squad-board">
+                  {customNames.map((player, index) => {
+                    const assignment = assignmentMap.get(player.id);
+                    const allowedRoles = rolesFor(player.id);
+                    return (
+                      <article
+                        className={`squad-player-card ${assignment ? 'has-assignment' : ''}`}
+                        key={player.id}
+                      >
+                        <span className="player-number">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <div className="squad-avatar">
+                          {assignment ? (
+                            <img
+                              src={assignment.hero.image}
+                              alt={`${assignment.hero.name} portrait`}
+                            />
+                          ) : (
+                            <Dices aria-hidden="true" />
+                          )}
+                        </div>
+                        <div className="squad-player-info">
+                          <small>{player.name}</small>
+                          <strong>
+                            {squadRolling
+                              ? 'Rolling…'
+                              : assignment
+                                ? assignment.hero.name
+                                : 'Waiting to roll'}
+                          </strong>
+                          {assignment ? (
+                            <span className="assigned-role" data-role={assignment.hero.role}>
+                              <RoleGlyph role={assignment.hero.role} />
+                              {ROLE_META[assignment.hero.role].short}
+                            </span>
+                          ) : (
+                            <div className="allowed-role-pills">
+                              {allowedRoles.map((item) => (
+                                <span key={item}>{ROLE_META[item].short}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {customNames.length === 0 && (
+                    <div className="empty-squad">
+                      <Users aria-hidden="true" />
+                      <strong>Add your group</strong>
+                      <span>Enter at least one name to roll the squad.</span>
+                    </div>
                   )}
-                  <div>
-                    <small>Locked in</small>
-                    <strong>{winner.name}</strong>
-                    {winner.role && <span>{ROLE_META[winner.role].label}</span>}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <span className="winner-placeholder"><Sparkles aria-hidden="true" /></span>
-                  <div>
-                    <small>{spinning ? 'Rolling…' : 'Ready'}</small>
-                    <strong>{spinning ? 'Good luck!' : 'Spin to choose'}</strong>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+                </div>
+              </div>
 
-          <Button
-            className="spin-button"
-            size="lg"
-            onClick={spin}
-            disabled={!canSpin}
-          >
-            <RotateCw data-icon="inline-start" aria-hidden="true" />
-            {spinning ? 'Spinning…' : 'Spin the wheel'}
-          </Button>
-          {wheelItems.length < 2 && (
-            <p className="spin-hint">Add at least two names before spinning.</p>
+              <Button
+                className="spin-button squad-roll-button"
+                size="lg"
+                onClick={rollSquad}
+                disabled={customNames.length === 0 || squadRolling}
+              >
+                <Dices data-icon="inline-start" aria-hidden="true" />
+                {squadRolling ? 'Rolling everyone…' : 'Roll the whole squad'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="wheel-stage">
+                <Wheel
+                  items={wheelItems}
+                  rotation={rotation}
+                  spinning={spinning}
+                  duration={duration}
+                />
+
+                <div className={`winner-card ${winner ? 'is-visible' : ''}`} aria-live="polite">
+                  {winner ? (
+                    <>
+                      {winner.image ? (
+                        <img src={winner.image} alt="" />
+                      ) : (
+                        <span className="winner-initial">{winner.name.charAt(0)}</span>
+                      )}
+                      <div>
+                        <small>Locked in</small>
+                        <strong>{winner.name}</strong>
+                        {winner.role && <span>{ROLE_META[winner.role].label}</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="winner-placeholder"><Sparkles aria-hidden="true" /></span>
+                      <div>
+                        <small>{spinning ? 'Rolling…' : 'Ready'}</small>
+                        <strong>{spinning ? 'Good luck!' : 'Spin to choose'}</strong>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <Button
+                className="spin-button"
+                size="lg"
+                onClick={spin}
+                disabled={!canSpin}
+              >
+                <RotateCw data-icon="inline-start" aria-hidden="true" />
+                {spinning ? 'Spinning…' : 'Spin the wheel'}
+              </Button>
+            </>
           )}
         </section>
 
-        <aside className="control-panel" aria-label="Wheel controls">
+        <aside
+          className={`control-panel ${mode === 'names' ? 'squad-controls' : ''}`}
+          aria-label="Wheel controls"
+        >
           <div className="panel-kicker">
             <span>02</span>
             <p>Build your pool</p>
@@ -316,19 +488,19 @@ export default function Home() {
           <div className="control-block">
             <div className="control-heading">
               <div>
-                <span>Wheel mode</span>
-                <small>Choose what you want to roll</small>
+                <span>Roll mode</span>
+                <small>Assign the squad or spin one hero</small>
               </div>
-              <strong>{wheelItems.length}</strong>
+              <strong>{mode === 'names' ? customNames.length : wheelItems.length}</strong>
             </div>
 
-            <div className="mode-tabs" role="group" aria-label="Wheel mode">
+            <div className="mode-tabs" role="group" aria-label="Roll mode">
               <Button
                 variant={mode === 'names' ? 'default' : 'ghost'}
                 aria-pressed={mode === 'names'}
                 onClick={() => changeMode('names')}
               >
-                <Users aria-hidden="true" /> Names
+                <Users aria-hidden="true" /> Squad
               </Button>
               <Button
                 variant={mode === 'heroes' ? 'default' : 'ghost'}
@@ -348,23 +520,94 @@ export default function Home() {
           </div>
 
           {mode === 'names' ? (
-            <div className="control-block name-control">
-              <label htmlFor="names">Player names</label>
-              <small>One per line, or separate with commas. Add as many as you like.</small>
-              <Textarea
-                id="names"
-                value={nameInput}
-                onChange={(event) => setNameInput(event.target.value)}
-                placeholder={'Alex\nJamie\nMorgan'}
-                disabled={spinning}
-              />
-              <div className="input-footer">
-                <span>{customNames.length} names ready</span>
-                <button type="button" onClick={() => setNameInput('')} disabled={spinning}>
-                  Clear all
-                </button>
+            <>
+              <div className="control-block name-control">
+                <label htmlFor="names">Player names</label>
+                <small>One per line, or separate with commas. Everyone rolls together.</small>
+                <Textarea
+                  id="names"
+                  value={nameInput}
+                  onChange={(event) => setNameInput(event.target.value)}
+                  placeholder={'Alex\nJamie\nMorgan'}
+                  disabled={squadRolling}
+                />
+                <div className="input-footer">
+                  <span>{customNames.length} players ready</span>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="xs"
+                    onClick={() => setNameInput('')}
+                    disabled={squadRolling}
+                  >
+                    Clear all
+                  </Button>
+                </div>
               </div>
-            </div>
+
+              <div className="control-block">
+                <div className="control-heading role-heading">
+                  <div>
+                    <span>Squad hero pool</span>
+                    <small>Roll from every hero or Stadium-only heroes</small>
+                  </div>
+                </div>
+                <div className="pool-switch" role="group" aria-label="Squad hero pool">
+                  <Button
+                    variant={squadPool === 'standard' ? 'default' : 'outline'}
+                    aria-pressed={squadPool === 'standard'}
+                    onClick={() => changeSquadPool('standard')}
+                  >
+                    <Crosshair aria-hidden="true" /> All heroes
+                  </Button>
+                  <Button
+                    variant={squadPool === 'stadium' ? 'default' : 'outline'}
+                    aria-pressed={squadPool === 'stadium'}
+                    onClick={() => changeSquadPool('stadium')}
+                  >
+                    <img className="stadium-tab-icon" src="/stadium-icon.svg" alt="" />
+                    Stadium
+                  </Button>
+                </div>
+              </div>
+
+              <div className="control-block">
+                <div className="control-heading role-heading">
+                  <div>
+                    <span>Roles per player</span>
+                    <small>Select one role or leave multiple roles enabled</small>
+                  </div>
+                </div>
+                <div className="player-role-list">
+                  {customNames.map((player) => {
+                    const selectedRoles = rolesFor(player.id);
+                    return (
+                      <div className="player-role-row" key={player.id}>
+                        <strong>{player.name}</strong>
+                        <div className="player-role-buttons" role="group" aria-label={`${player.name} roles`}>
+                          {ALL_ROLES.map((item) => (
+                            <Button
+                              key={item}
+                              size="xs"
+                              variant={selectedRoles.includes(item) ? 'default' : 'outline'}
+                              aria-pressed={selectedRoles.includes(item)}
+                              onClick={() => togglePlayerRole(player.id, item)}
+                              title={ROLE_META[item].label}
+                            >
+                              <RoleGlyph role={item} />
+                              <span>{ROLE_META[item].short}</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {customNames.length === 0 && (
+                    <p className="role-list-empty">Add names to choose their roles.</p>
+                  )}
+                </div>
+              </div>
+            </>
           ) : (
             <div className="control-block">
               <div className="control-heading role-heading">
@@ -407,7 +650,7 @@ export default function Home() {
           )}
 
           <div className="pool-summary">
-            {mode === 'stadium' ? (
+            {mode === 'stadium' || (mode === 'names' && squadPool === 'stadium') ? (
               <img src="/stadium-icon.svg" alt="" />
             ) : mode === 'heroes' ? (
               <Crosshair aria-hidden="true" />
@@ -415,8 +658,12 @@ export default function Home() {
               <Users aria-hidden="true" />
             )}
             <div>
-              <small>Current wheel</small>
-              <strong>{wheelItems.length} eligible {mode === 'names' ? 'players' : 'heroes'}</strong>
+              <small>{mode === 'names' ? 'Current squad' : 'Current wheel'}</small>
+              <strong>
+                {mode === 'names'
+                  ? `${customNames.length} players · ${squadPool === 'stadium' ? 'Stadium' : 'All heroes'}`
+                  : `${wheelItems.length} eligible heroes`}
+              </strong>
             </div>
           </div>
         </aside>
@@ -430,20 +677,38 @@ export default function Home() {
           </div>
           <p>
             {mode === 'names'
-              ? 'Every name below has an equal chance of being selected.'
+              ? 'Each player can queue for one role or stay flexible across several roles.'
               : `${wheelItems.length} heroes match your current mode and role filter.`}
           </p>
         </div>
 
         {mode === 'names' ? (
-          <div className="name-pool">
-            {customNames.map((item, index) => (
-              <span key={item.id}>
-                <b>{String(index + 1).padStart(2, '0')}</b>
-                {item.name}
-              </span>
-            ))}
-            {customNames.length === 0 && <p className="empty-pool">Your names will appear here.</p>}
+          <div className="role-overview-grid">
+            {customNames.map((player, index) => {
+              const assignment = assignmentMap.get(player.id);
+              return (
+                <article className="role-overview-card" key={player.id}>
+                  <b>{String(index + 1).padStart(2, '0')}</b>
+                  {assignment ? (
+                    <img src={assignment.hero.image} alt="" />
+                  ) : (
+                    <span className="overview-placeholder"><Users aria-hidden="true" /></span>
+                  )}
+                  <div>
+                    <strong>{player.name}</strong>
+                    <small>{assignment ? assignment.hero.name : 'Not rolled yet'}</small>
+                    <div>
+                      {rolesFor(player.id).map((item) => (
+                        <span key={item} data-role={item}>{ROLE_META[item].short}</span>
+                      ))}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+            {customNames.length === 0 && (
+              <p className="empty-pool">Your squad will appear here.</p>
+            )}
           </div>
         ) : (
           <div className="hero-grid">
