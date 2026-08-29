@@ -1,62 +1,42 @@
-# Frustration Rummy Web
+# Group Up — Overwatch Hero Roulette
 
-A small web multiplayer version of Frustration Rummy designed for easy family play.
+A responsive wheel picker for groups who want to:
 
-## Run Locally
+- enter any number of player names;
+- spin the full Overwatch roster through D.Mon;
+- filter heroes by Tank, DPS, or Healer / Support;
+- switch to a Stadium-only hero pool using the official Stadium mode icon; and
+- see every eligible hero portrait underneath the wheel.
 
-```powershell
-node server.js
+The app is fully client-side. Custom names are saved only in the current browser's local storage.
+
+## Run locally
+
+Requirements: Node.js 22.13 or newer.
+
+```bash
+npm install
+npm run dev
 ```
 
-Open `http://localhost:3000`, create a game, then text the four-character code to the other players.
+Open `http://localhost:3000`.
 
-## Deploy
+## Deploy with GitHub and Render
 
-This app is intentionally simple:
+1. Create a new empty GitHub repository.
+2. Add this entire folder to the repository and push it to the default branch.
+3. In Render, choose **New → Blueprint**.
+4. Connect the GitHub repository.
+5. Render will detect `render.yaml`, build the site, publish `dist/client`, and redeploy after each commit.
 
-- one Node process
-- no database
-- static files served from `public`
-- WebSocket game rooms kept in memory
+No environment variables or database are needed.
 
-Good low-cost hosting options are a small AWS Lightsail instance, Fly.io, Render, Railway, or any VPS that can run Node. Set the `PORT` environment variable if your host requires a specific port.
+## Update the roster
 
-### Render
+Hero data is stored in `app/heroes.ts`. Portraits live in `public/heroes`. Keep both in sync when Blizzard adds or changes heroes.
 
-Use a **Web Service**, not a Static Site. The page can load as static files, but joining and playing needs the Node server because game rooms and WebSocket messages live there.
+The starting roster and mode eligibility were checked against Blizzard's current hero and Stadium galleries on August 30, 2026. Portrait files are Blizzard-hosted hero artwork downloaded into the project so deployed builds do not rely on a runtime image API.
 
-Render settings:
+## Fan project notice
 
-- Runtime: Node
-- Build command: `npm install`
-- Start command: `npm start`
-- Health check path: `/health`
-
-If the front page loads but says it cannot connect, check that the deployed service is a Web Service and that the browser console is not showing a failed `wss://...` WebSocket request. A failed WebSocket usually means the Node process is not handling the site, or the host is not forwarding WebSocket upgrades.
-
-## Family Rules From The Sheets
-
-The contract list is in `server.js` under `CONTRACTS`.
-
-Current assumptions:
-
-- 2 combined decks, with jokers removed
-- 10 cards per player plus one discard
-- 2s are wild and can stand in for any card
-- Melds must contain more natural cards than wild cards, except a pair may be one natural card plus one wild 2
-- Ordinary runs can use mixed suits
-- Hand 13 is the special black-or-red run
-- Players cannot lay down during the first round of turns
-- Players draw, optionally lay down/add to melds, then discard
-- Cards are private until a player lays down
-- Players who lay down advance to the next hand after the round; players who did not lay down stay on their current hand
-- Going out scores minus 20
-- Cards left in hand score: 2s and Aces 20, 3-10 face value, J/Q/K 10
-- Hands 15 and 19 are down-and-out hands
-- Hands 20 and 21 are down-and-out with no discard
-
-The physical-sheet dealer bonus for cutting the exact number of cards is not automated, because the web game shuffles and deals without a manual cut step.
-
-## Notes
-
-Room state is in memory. If the server restarts, active games are lost. For a family table this is usually fine; for public hosting, add persistence and reconnect tokens.
+This is an unofficial fan-made picker. Overwatch, its characters, the Stadium symbol, and hero artwork are trademarks and property of Blizzard Entertainment.
